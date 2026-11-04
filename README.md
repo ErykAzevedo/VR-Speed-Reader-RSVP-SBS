@@ -6,7 +6,9 @@ tempo, sem distrações em volta.
 
 É um web app: roda no navegador do celular (Android ou iPhone), sem instalar nada, sem Unity e sem loja.
 
-## Rodar
+**Abrir:** https://erykazevedo.github.io/VR-Speed-Reader-RSVP-SBS/
+
+## Rodar localmente
 
 ```bash
 python3 -m http.server 8080 --bind 0.0.0.0
