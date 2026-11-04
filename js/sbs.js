@@ -11,9 +11,12 @@ const EYE_TEMPLATE = `
     <div class="reticle top"></div>
     <div class="word"><span class="w-left"></span><span class="w-pivot"></span><span class="w-right"></span></div>
     <div class="reticle bottom"></div>
+    <div class="picture"><img alt=""></div>
+    <div class="caption"></div>
     <div class="context"></div>
     <div class="flash"></div>
     <div class="progress"><div class="bar"></div></div>
+    <div class="rounds"></div>
   </div>`;
 
 export class SbsView {
@@ -31,9 +34,51 @@ export class SbsView {
       status: eye.querySelector('.status'),
       flash: eye.querySelector('.flash'),
       bar: eye.querySelector('.bar'),
+      img: eye.querySelector('.picture img'),
+      caption: eye.querySelector('.caption'),
+      rounds: eye.querySelector('.rounds'),
     }));
     this.fit = 1;
     this.flashTimer = null;
+    this.roundCount = 0;
+  }
+
+  /** 'text' = leitor de texto · 'word' / 'image' = modos do vocabulário */
+  setMode(mode, { caption = true } = {}) {
+    const c = this.root.classList;
+    c.toggle('vocab', mode !== 'text');
+    c.toggle('vocab-word', mode === 'word');
+    c.toggle('vocab-image', mode === 'image');
+    c.toggle('show-caption', caption);
+  }
+
+  showImage(src, caption) {
+    for (const part of this.parts) {
+      if (!src) part.img.removeAttribute('src');
+      else if (part.img.getAttribute('src') !== src) part.img.src = src;
+      part.caption.textContent = caption ?? '';
+    }
+  }
+
+  /** Uma barrinha por volta da lista; a volta atual enche conforme avança. */
+  setRounds(total, current, fraction) {
+    if (this.roundCount !== total) {
+      this.roundCount = total;
+      for (const part of this.parts) {
+        part.rounds.replaceChildren(...Array.from({ length: total }, () => {
+          const seg = document.createElement('div');
+          seg.className = 'seg';
+          seg.append(document.createElement('div'));
+          return seg;
+        }));
+      }
+    }
+    for (const part of this.parts) {
+      [...part.rounds.children].forEach((seg, r) => {
+        const fill = r < current ? 1 : r > current ? 0 : fraction;
+        seg.firstChild.style.width = `${(fill * 100).toFixed(1)}%`;
+      });
+    }
   }
 
   apply({ fontSize, shiftX, shiftY, mono, showContext }) {

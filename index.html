@@ -20,32 +20,157 @@
       <p class="sub">RSVP lado a lado (SBS) com narração em inglês para VR Box</p>
     </header>
 
-    <section class="card">
-      <h2>Texto</h2>
-      <textarea id="text" placeholder="Cole aqui um texto em inglês…" spellcheck="false"></textarea>
-      <div class="row">
-        <label class="btn">Abrir .txt<input type="file" id="file" accept=".txt,.md,text/plain" hidden></label>
-        <button id="sample" type="button">Texto de exemplo</button>
-        <span id="textInfo" class="muted"></span>
-      </div>
-      <div class="row">
-        <span id="posInfo" class="muted"></span>
-        <button id="restart" type="button" class="link">Voltar ao início</button>
-      </div>
-    </section>
+    <div class="tabs" role="tablist" aria-label="O que ler">
+      <button type="button" role="tab" id="tabText" aria-controls="panelText" data-tab="text">Texto</button>
+      <button type="button" role="tab" id="tabVocab" aria-controls="panelVocab" data-tab="vocab">Vocabulário</button>
+    </div>
 
-    <section class="card">
-      <h2>Leitura</h2>
-      <label>Velocidade: <output id="wpmOut"></output> palavras/min
-        <input type="range" id="wpm" min="80" max="600" step="10"></label>
-      <label>Tamanho da fonte: <output id="fontOut"></output>
-        <input type="range" id="font" min="20" max="90" step="2"></label>
-      <label class="check"><input type="checkbox" id="context"> Mostrar a frase inteira abaixo da palavra</label>
-    </section>
+    <!-- ===== Texto ===== -->
+    <div id="panelText" role="tabpanel" aria-labelledby="tabText">
+      <section class="card">
+        <h2>Texto</h2>
+        <textarea id="text" placeholder="Cole aqui um texto em inglês…" spellcheck="false"></textarea>
+        <div class="row">
+          <label class="btn">Abrir .txt<input type="file" id="file" accept=".txt,.md,text/plain" hidden></label>
+          <button id="sample" type="button">Texto de exemplo</button>
+          <span id="textInfo" class="muted"></span>
+        </div>
+        <div class="row">
+          <span id="posInfo" class="muted"></span>
+          <button id="restart" type="button" class="link">Voltar ao início</button>
+        </div>
+      </section>
 
+      <section class="card">
+        <h2>Leitura</h2>
+        <label>Velocidade: <output id="wpmOut"></output> palavras/min
+          <input type="range" id="wpm" min="80" max="600" step="10"></label>
+        <label class="check"><input type="checkbox" id="context"> Mostrar a frase inteira abaixo da palavra</label>
+      </section>
+    </div>
+
+    <!-- ===== Vocabulário ===== -->
+    <div id="panelVocab" role="tabpanel" aria-labelledby="tabVocab" hidden>
+      <div id="vocabList">
+        <section class="card">
+          <label for="vocabPaste" class="stack">
+            <span class="eyebrow">Adicionar palavras</span>
+            <span class="hint">Uma por linha: <strong>palavra, link da imagem</strong></span>
+          </label>
+          <textarea id="vocabPaste" class="mono" spellcheck="false" autocapitalize="off"
+            placeholder="apple, https://site.com/apple.jpg&#10;umbrella, https://site.com/umbrella.png"></textarea>
+          <div class="row">
+            <button id="vocabAdd" type="button" class="blue" disabled>Adicionar</button>
+            <label class="btn">Abrir .csv<input type="file" id="vocabFile" accept=".csv,.txt,text/csv,text/plain" hidden></label>
+          </div>
+          <p id="vocabAddInfo" class="muted small" aria-live="polite"></p>
+        </section>
+
+        <section class="card list-card">
+          <div class="list-head">
+            <label for="vocabListSelect" class="eyebrow">Lista</label>
+            <select id="vocabListSelect"></select>
+            <button id="vocabNewList" type="button" class="icon" aria-label="Nova lista">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            </button>
+            <button id="vocabDeleteList" type="button" class="icon" aria-label="Apagar esta lista">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>
+            </button>
+          </div>
+          <ul id="vocabItems" class="vocab-items"></ul>
+          <p id="vocabEmpty" class="muted empty">Nenhuma palavra ainda. Cole acima no formato <strong>palavra, link</strong>.</p>
+        </section>
+
+        <div class="actionbar">
+          <div class="counts"><span id="vocabCount"></span><span id="vocabImgStatus"></span></div>
+          <button id="vocabConfigure" type="button" class="primary">Configurar sessão →</button>
+        </div>
+      </div>
+
+      <div id="vocabSession" hidden>
+        <button id="vocabBack" type="button" class="back">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="M11 6l-6 6 6 6"/></svg>
+          Lista
+        </button>
+        <h2 class="title">Sessão de vocabulário</h2>
+        <p id="sessionSub" class="muted"></p>
+
+        <h3 class="eyebrow">Como revisar</h3>
+        <div class="modes">
+          <button type="button" class="mode" data-mode="word">
+            <span class="mode-icon">A<span class="red">b</span></span>
+            <span class="mode-text"><strong>Palavra em RSVP</strong><span>Ouve e vê a palavra no centro da lente</span></span>
+            <svg class="mode-check" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>
+          </button>
+          <button type="button" class="mode" data-mode="image">
+            <span class="mode-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>
+            </span>
+            <span class="mode-text"><strong>Imagem pré-carregada</strong><span>Ouve a palavra e vê a imagem dela</span></span>
+            <svg class="mode-check" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>
+          </button>
+        </div>
+
+        <section class="card flush">
+          <div class="setting-row">
+            <div class="setting-text">
+              <span id="repsLabel" class="setting-title">Repetições da lista</span>
+              <span id="repsSummary" class="muted small"></span>
+            </div>
+            <div class="stepper" role="group" aria-labelledby="repsLabel">
+              <button id="repsDec" type="button" aria-label="Uma repetição a menos">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>
+              </button>
+              <output id="repsOut"></output>
+              <button id="repsInc" type="button" aria-label="Uma repetição a mais">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="setting-row column">
+            <span id="paceLabel" class="setting-title">Tempo por palavra</span>
+            <div class="pills" role="group" aria-labelledby="paceLabel">
+              <button type="button" data-pace="1.5">1,5 s</button>
+              <button type="button" data-pace="2">2 s</button>
+              <button type="button" data-pace="3">3 s</button>
+              <button type="button" data-pace="4">4 s</button>
+            </div>
+          </div>
+          <label class="setting-row check">
+            <input type="checkbox" id="vocabShuffle">
+            <span class="setting-text">
+              <span class="setting-title">Embaralhar a cada volta</span>
+              <span class="muted small">Evita decorar a ordem da lista</span>
+            </span>
+          </label>
+          <label class="setting-row check" id="captionRow">
+            <input type="checkbox" id="vocabCaption">
+            <span class="setting-title">Mostrar a palavra embaixo da imagem</span>
+          </label>
+        </section>
+
+        <section class="card" id="precacheCard">
+          <div class="between">
+            <span class="setting-title">Imagens no aparelho</span>
+            <span id="precacheCount" class="tabular"></span>
+          </div>
+          <div class="meter"><div id="precacheBar"></div></div>
+          <div class="between">
+            <span id="precacheIssues" class="issues" aria-live="polite"></span>
+            <button id="precacheRetry" type="button">Tentar de novo</button>
+          </div>
+        </section>
+
+        <p id="wordModeNote" class="note"></p>
+
+        <button id="vocabStart" type="button" class="primary">▶ Entrar no VR</button>
+      </div>
+    </div>
+
+    <!-- ===== Compartilhado ===== -->
     <section class="card">
       <h2>Áudio</h2>
-      <label class="check"><input type="checkbox" id="audio"> Narração em inglês (TTS) sincronizada com o texto</label>
+      <label class="check"><input type="checkbox" id="audio"> Narração em inglês (TTS) sincronizada</label>
       <label>Voz <select id="voice"></select></label>
       <div class="row">
         <button id="testVoice" type="button">Testar voz</button>
@@ -61,6 +186,8 @@
           <option value="mono">Tela única (sem óculos)</option>
         </select>
       </label>
+      <label>Tamanho da fonte e da imagem: <output id="fontOut"></output>
+        <input type="range" id="font" min="20" max="90" step="2"></label>
       <label>Ajuste horizontal (lentes / profundidade): <output id="shiftXOut"></output>
         <input type="range" id="shiftX" min="-80" max="80" step="1"></label>
       <label>Ajuste vertical: <output id="shiftYOut"></output>
@@ -78,9 +205,9 @@
       <summary>Controles dentro do VR</summary>
       <table>
         <tr><td>Play / pausa</td><td>Toque na tela · Espaço/Enter · botão A ou Start · botão ⏯ do controle · abaixar a cabeça</td></tr>
-        <tr><td>Próxima frase</td><td>→ · D-pad direita · ⏭ · inclinar a cabeça para a direita</td></tr>
-        <tr><td>Repetir / frase anterior</td><td>← · D-pad esquerda · ⏮ · inclinar a cabeça para a esquerda</td></tr>
-        <tr><td>Mais rápido / mais devagar</td><td>↑ / ↓ · D-pad cima/baixo · RB / LB</td></tr>
+        <tr><td>Avançar</td><td>→ · D-pad direita · ⏭ · inclinar a cabeça para a direita (texto: próxima frase; vocabulário: próxima palavra)</td></tr>
+        <tr><td>Voltar</td><td>← · D-pad esquerda · ⏮ · inclinar a cabeça para a esquerda</td></tr>
+        <tr><td>Mais rápido / mais devagar</td><td>↑ / ↓ · D-pad cima/baixo · RB / LB (no vocabulário muda o tempo por palavra)</td></tr>
         <tr><td>Sair do VR</td><td>Toque longo na tela · Esc · Select · botão Voltar</td></tr>
       </table>
     </details>

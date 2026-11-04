@@ -36,14 +36,32 @@ Por HTTP na rede local, a leitura e a voz funcionam, mas o navegador bloqueia du
 4. Se a palavra aparecer dupla, mexa no **ajuste horizontal** (valores positivos aproximam as
    imagens do centro). Ajuste também a altura e o tamanho da fonte.
 
+### Vocabulário com imagens
+
+Na aba **Vocabulário**, cole uma palavra por linha no formato `palavra, link da imagem` (também
+aceita `;` ou tab, e linha só com a palavra) ou abra um `.csv`. Dá para ter várias listas.
+
+- As imagens começam a baixar assim que entram na lista. Cada palavra mostra se a imagem está
+  pronta, baixando ou com falha. Toque na palavra para trocar o link.
+- **Configurar sessão** → escolha o modo, o número de **repetições** da lista, o **tempo por
+  palavra** e se a ordem é embaralhada a cada volta.
+  - **Palavra em RSVP**: ouve e vê a palavra no centro da lente. Usa todas as palavras.
+  - **Imagem pré-carregada**: ouve a palavra e vê a imagem (com a palavra embaixo, opcional). Só
+    entram as palavras cuja imagem carregou; ao entrar no VR o app espera as que ainda estão baixando.
+- Cada palavra fica na tela pelo tempo escolhido, ou até a voz terminar de falar, o que for mais longo.
+
+**Cache das imagens:** se o site da imagem permite (CORS), ela é guardada no aparelho e funciona
+offline nas próximas vezes. Se não permite, ela é carregada direto e fica na memória enquanto o app
+está aberto. Em ambos os casos ela já está carregada quando a palavra aparece.
+
 ### Controles dentro do VR
 
 | Ação | Como |
 | --- | --- |
 | Play / pausa | toque na tela · Espaço/Enter · A/Start · ⏯ · abaixar a cabeça |
-| Próxima frase | → · D-pad direita · ⏭ · inclinar a cabeça para a direita |
-| Repetir / frase anterior | ← · D-pad esquerda · ⏮ · inclinar a cabeça para a esquerda |
-| Mais rápido / devagar | ↑ / ↓ · D-pad · RB / LB |
+| Avançar (frase / palavra) | → · D-pad direita · ⏭ · inclinar a cabeça para a direita |
+| Voltar (frase / palavra) | ← · D-pad esquerda · ⏮ · inclinar a cabeça para a esquerda |
+| Mais rápido / devagar | ↑ / ↓ · D-pad · RB / LB (no vocabulário muda o tempo por palavra) |
 | Sair | toque longo · Esc · Select · botão Voltar |
 
 O controle Bluetooth que vem com muitos VR Box funciona como teclado, botões de mídia ou gamepad;
@@ -77,9 +95,11 @@ texto ──► text.js ──► palavras + frases (chunks de até ~28 palavras
 | --- | --- |
 | `js/text.js` | divide palavras e frases, letra de foco (ORP), peso de cada palavra |
 | `js/reader.js` | reprodução: TTS sincronizado, modo estimado, modo silencioso, navegação |
-| `js/sbs.js` | desenho lado a lado, centralização do foco, redução de palavras longas |
+| `js/sbs.js` | desenho lado a lado, centralização do foco, redução de palavras longas, imagem e voltas |
 | `js/input.js` | teclado, botões de mídia, gamepad, toque e gestos de cabeça |
-| `js/main.js` | tela de configurações, vozes, tela cheia, wake lock, posição salva |
+| `js/vocab.js` | lista `palavra, link`, cache das imagens, player com repetições |
+| `js/vocab-ui.js` | aba Vocabulário: listas, estado das imagens, configuração da sessão |
+| `js/main.js` | abas, vozes, tela cheia, wake lock, posição salva, sessões no VR |
 
 ## Próximos passos sugeridos
 
@@ -88,6 +108,7 @@ texto ──► text.js ──► palavras + frases (chunks de até ~28 palavras
    Speech, ElevenLabs, Google Cloud TTS), e tocar como arquivo. Voz muito melhor, sincronia exata e
    funciona offline depois de gerado.
 3. **Áudiolivro + texto**: alinhar um audiolivro real com o texto (forced alignment, ex.: WhisperX).
-4. **Ajuda de vocabulário**: ao pausar, mostrar a tradução da palavra ou da frase atual.
+4. **Tradução**: ao pausar, mostrar a tradução da palavra ou da frase atual; no vocabulário, uma
+   terceira coluna opcional `palavra, link, tradução`.
 5. **PWA offline**: service worker para abrir sem internet.
 6. **Estatísticas**: tempo lido, wpm médio e sequência de dias.

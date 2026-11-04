@@ -2,6 +2,8 @@ import { parseText, textHash } from './text.js';
 import { Reader, hasSpeech } from './reader.js';
 import { SbsView } from './sbs.js';
 import { Controls, HeadGestures } from './input.js';
+import { ImageStore, VocabPlayer } from './vocab.js';
+import { initVocabUI, formatPace } from './vocab-ui.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -24,9 +26,11 @@ const store = {
 };
 
 const DEFAULTS = {
+  tab: 'text',
   wpm: 200, font: 46, context: false,
   audio: true, voiceURI: '',
   mode: 'sbs', shiftX: 0, shiftY: 0, countdown: 5, head: false, headInvert: false,
+  vocabMode: 'word', vocabReps: 3, vocabPace: 2, vocabShuffle: true, vocabCaption: true,
 };
 const settings = { ...DEFAULTS, ...store.get('settings', {}) };
 const saveSettings = () => store.set('settings', settings);
@@ -44,22 +48,27 @@ let doc = null;
 let docHash = '';
 let lastSaved = 0;
 let inVr = false;
+let session = null; // o que está tocando no VR: 'text' | 'vocab'
+let vocabInfo = null; // { mode, reps, count } da sessão de vocabulário atual
+let preparing = ''; // status enquanto as imagens terminam de carregar
 let wentFullscreen = false;
 let wakeLock = null;
 let countdownLeft = 0;
 let countdownTimer = null;
+let vocabUI = null;
+
+const showing = (kind) => inVr && session === kind;
 
 const reader = new Reader({
   onWord(i) {
-    if (inVr) renderWord(i);
+    if (showing('text')) renderWord(i);
     if (Date.now() - lastSaved > 5000) savePosition();
   },
   onState(state) {
+    if (state !== 'playing') savePosition();
+    if (!showing('text')) return;
     view.setPaused(state !== 'playing');
-    if (state !== 'playing') {
-      savePosition();
-      if (inVr) renderWord(reader.index);
-    }
+    if (state !== 'playing') renderWord(reader.index);
     if (state === 'ended') view.flash('✓ fim');
     renderStatus();
   },
@@ -76,6 +85,20 @@ const reader = new Reader({
 reader.setWpm(settings.wpm);
 reader.audio = settings.audio && hasSpeech();
 
+const images = new ImageStore(() => vocabUI?.refresh());
+
+const vocab = new VocabPlayer({
+  onItem(step) {
+    if (showing('vocab')) renderVocabItem(step);
+  },
+  onState(state) {
+    if (!showing('vocab')) return;
+    view.setPaused(state !== 'playing');
+    if (state === 'ended') view.flash('✓ fim');
+    renderStatus();
+  },
+});
+
 // ---------------- render ----------------
 
 function renderWord(i) {
@@ -87,7 +110,17 @@ function renderWord(i) {
   view.setProgress(doc.words.length > 1 ? i / (doc.words.length - 1) : 1);
 }
 
+function renderVocabItem(step) {
+  if (!step || !vocabInfo) return;
+  const { item, round, pos } = step;
+  if (vocabInfo.mode === 'image') view.showImage(images.src(item.url), item.word);
+  else view.showWord(item.word);
+  view.setRounds(vocabInfo.reps, round, (pos + 1) / vocabInfo.count);
+  renderStatus();
+}
+
 function renderStatus() {
+  if (session === 'vocab') return renderVocabStatus();
   if (!doc) return;
   const pct = Math.round((reader.index / Math.max(1, doc.words.length - 1)) * 100);
   const atEnd = reader.index >= doc.words.length - 1;
@@ -96,6 +129,18 @@ function renderStatus() {
     : atEnd ? '✓ Fim' : '⏸ Pausado';
   const audio = reader.audio ? ' · 🔊' : '';
   view.setStatus(`${state} · ${pct}% · ${reader.effectiveWpm} wpm${audio}`);
+}
+
+function renderVocabStatus() {
+  if (preparing) return view.setStatus(preparing);
+  const step = vocab.current;
+  if (!step || !vocabInfo) return;
+  const noun = vocabInfo.mode === 'image' ? 'imagem' : 'palavra';
+  const where = `Volta ${step.round + 1} de ${vocabInfo.reps} · ${noun} ${step.pos + 1} de ${vocabInfo.count}`;
+  const state = countdownLeft > 0 ? `Começando em ${countdownLeft}…`
+    : vocab.ended ? '✓ Fim'
+    : vocab.playing ? '' : `⏸ Pausado · ${formatPace(vocab.pace)} por palavra`;
+  view.setStatus(state ? `${state} · ${where}` : where);
 }
 
 function renderTextInfo() {
@@ -110,6 +155,23 @@ function renderTextInfo() {
 
 function warn(msg) {
   $('warnings').textContent = msg;
+}
+
+// ---------------- abas ----------------
+
+function showTab(tab) {
+  settings.tab = tab;
+  saveSettings();
+  for (const button of document.querySelectorAll('.tabs [role="tab"]')) {
+    button.setAttribute('aria-selected', String(button.dataset.tab === tab));
+  }
+  $('panelText').hidden = tab !== 'text';
+  $('panelVocab').hidden = tab !== 'vocab';
+  $('start').hidden = tab !== 'text';
+}
+
+for (const button of document.querySelectorAll('.tabs [role="tab"]')) {
+  button.addEventListener('click', () => showTab(button.dataset.tab));
 }
 
 // ---------------- texto e posição ----------------
@@ -208,6 +270,14 @@ function changeWpm(delta) {
   view.flash(`${settings.wpm} wpm`);
 }
 
+function changePace(delta) {
+  settings.vocabPace = Math.min(10, Math.max(1, Math.round((settings.vocabPace + delta) * 2) / 2));
+  vocab.setPace(settings.vocabPace);
+  saveSettings();
+  vocabUI?.refresh();
+  view.flash(`${formatPace(settings.vocabPace)} por palavra`);
+}
+
 // ---------------- vozes ----------------
 
 let voices = [];
@@ -233,7 +303,8 @@ function loadVoices() {
     ?? voices[0];
   if (chosen) select.value = chosen.voiceURI;
   reader.setVoice(chosen ?? null);
-  if (!voices.length) $('voiceInfo').textContent = 'Nenhuma voz em inglês encontrada (será usada a voz padrão).';
+  // no Chrome as vozes chegam depois (voiceschanged): a lista vazia inicial não é definitiva
+  $('voiceInfo').textContent = voices.length ? '' : 'Nenhuma voz em inglês encontrada (será usada a voz padrão).';
 }
 
 $('voice').addEventListener('change', () => {
@@ -243,13 +314,20 @@ $('voice').addEventListener('change', () => {
   $('voiceInfo').textContent = '';
 });
 
-$('testVoice').addEventListener('click', () => {
-  if (!hasSpeech()) return;
+function speakOnce(text, rate = reader.rate) {
+  if (!hasSpeech()) return null;
   speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance('This is how your reading voice sounds.');
+  const u = new SpeechSynthesisUtterance(text);
   u.voice = reader.voice;
   u.lang = reader.voice?.lang || 'en-US';
-  u.rate = reader.rate;
+  u.rate = rate;
+  speechSynthesis.speak(u);
+  return u;
+}
+
+$('testVoice').addEventListener('click', () => {
+  const u = speakOnce('This is how your reading voice sounds.');
+  if (!u) return;
   let boundaries = 0;
   u.onboundary = (e) => {
     if (!e.name || e.name === 'word') boundaries++;
@@ -261,50 +339,68 @@ $('testVoice').addEventListener('click', () => {
   };
   u.onerror = (e) => ($('voiceInfo').textContent = `Erro na voz: ${e.error}`);
   $('voiceInfo').textContent = 'Falando…';
-  speechSynthesis.speak(u);
 });
 
 // ---------------- modo VR ----------------
 
+const player = () => (session === 'vocab' ? vocab : reader);
+
 const actions = {
   toggle() {
+    if (preparing) return;
     if (countdownLeft > 0) {
       cancelCountdown();
-      reader.play();
+      player().play();
     } else {
-      reader.toggle();
+      player().toggle();
     }
-    view.flash(reader.playing ? '▶' : '⏸');
+    view.flash(player().playing ? '▶' : '⏸');
   },
   next() {
+    if (preparing) return;
     cancelCountdown();
-    reader.nextChunk();
+    if (session === 'vocab') vocab.next();
+    else reader.nextChunk();
     view.flash('⏭');
+    renderStatus();
   },
   prev() {
+    if (preparing) return;
     cancelCountdown();
-    reader.prevChunk();
+    if (session === 'vocab') vocab.prev();
+    else reader.prevChunk();
     view.flash('⏮');
+    renderStatus();
   },
-  faster: () => changeWpm(+20),
-  slower: () => changeWpm(-20),
+  faster: () => (session === 'vocab' ? changePace(-0.5) : changeWpm(+20)),
+  slower: () => (session === 'vocab' ? changePace(+0.5) : changeWpm(-20)),
   exit: () => exitVr(),
 };
 
 const controls = new Controls($('vr'), actions);
 const head = new HeadGestures((gesture) => actions[gesture]());
 
-$('start').addEventListener('click', enterVr);
+$('start').addEventListener('click', () => enterVr('text'));
 
-async function enterVr() {
-  if (!doc?.words.length) {
+async function enterVr(kind) {
+  let items = null;
+  if (kind === 'text' && !doc?.words.length) {
     warn('Cole ou abra um texto em inglês primeiro.');
     return;
+  }
+  if (kind === 'vocab') {
+    items = vocabUI.sessionItems();
+    if (!items.length) {
+      warn(settings.vocabMode === 'image'
+        ? 'Nenhuma palavra da lista tem imagem carregada.'
+        : 'A lista está vazia.');
+      return;
+    }
   }
   warn('');
 
   // Tudo que exige gesto do usuário é disparado aqui, antes de qualquer await.
-  if (reader.audio) {
+  if (settings.audio && hasSpeech()) {
     const unlock = new SpeechSynthesisUtterance(' ');
     unlock.volume = 0;
     speechSynthesis.speak(unlock);
@@ -315,6 +411,7 @@ async function enterVr() {
     : Promise.resolve(false);
 
   inVr = true;
+  session = kind;
   document.activeElement?.blur(); // evita que Espaço/Enter "clique" de novo no botão
   $('setup').hidden = true;
   $('vr').hidden = false;
@@ -326,9 +423,17 @@ async function enterVr() {
     showContext: settings.context,
   });
   view.setPaused(true);
-  renderWord(reader.index);
+  if (kind === 'text') {
+    view.setMode('text');
+    renderWord(reader.index);
+  } else {
+    view.setMode(settings.vocabMode, { caption: settings.vocabCaption });
+    view.showWord('');
+    view.showImage('', '');
+  }
   controls.start();
-  startCountdown();
+  if (kind === 'text') startCountdown(() => reader.play());
+  else startVocab(items);
 
   wentFullscreen = await fullscreen;
   if (wentFullscreen) screen.orientation?.lock?.('landscape').catch(() => {});
@@ -343,11 +448,45 @@ async function enterVr() {
   }
 }
 
+async function startVocab(items) {
+  const mode = settings.vocabMode;
+  if (mode === 'image') {
+    // espera as imagens que ainda estão baixando; as que falharem ficam de fora
+    const urls = items.map((i) => i.url);
+    const update = () => {
+      const ready = urls.filter((u) => images.state(u) === 'ok').length;
+      preparing = `Preparando imagens ${ready} de ${urls.length}…`;
+      renderStatus();
+    };
+    update();
+    const ticker = setInterval(update, 300);
+    await images.whenSettled(urls);
+    clearInterval(ticker);
+    preparing = '';
+    if (!showing('vocab')) return; // saiu do VR durante o preparo
+    items = items.filter((i) => images.state(i.url) === 'ok');
+    if (!items.length) {
+      view.setStatus('Nenhuma imagem carregou. Saia (toque longo) e confira os links.');
+      return;
+    }
+  }
+  vocabInfo = { mode, reps: settings.vocabReps, count: items.length };
+  vocab.audio = settings.audio && hasSpeech();
+  vocab.voice = reader.voice;
+  vocab.setPace(settings.vocabPace);
+  vocab.setup(items, { reps: settings.vocabReps, shuffle: settings.vocabShuffle });
+  renderVocabItem(vocab.current);
+  startCountdown(() => vocab.play());
+}
+
 function exitVr() {
   if (!inVr) return;
-  inVr = false;
   cancelCountdown();
   reader.pause();
+  vocab.pause();
+  inVr = false;
+  session = null;
+  preparing = '';
   controls.stop();
   head.stop();
   wakeLock?.release().catch(() => {});
@@ -364,11 +503,11 @@ function exitVr() {
   renderTextInfo();
 }
 
-function startCountdown() {
+function startCountdown(onDone) {
   cancelCountdown();
   countdownLeft = settings.countdown;
   if (!countdownLeft) {
-    reader.play();
+    onDone();
     return;
   }
   renderStatus();
@@ -377,7 +516,7 @@ function startCountdown() {
     renderStatus();
     if (countdownLeft <= 0) {
       cancelCountdown();
-      reader.play();
+      onDone();
     }
   }, 1000);
 }
@@ -404,6 +543,7 @@ document.addEventListener('fullscreenchange', () => {
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     reader.pause();
+    vocab.pause();
     savePosition();
   } else if (inVr) {
     requestWakeLock();
@@ -411,7 +551,8 @@ document.addEventListener('visibilitychange', () => {
 });
 
 window.addEventListener('resize', () => {
-  if (inVr) renderWord(reader.index);
+  if (showing('text')) renderWord(reader.index);
+  else if (showing('vocab')) renderVocabItem(vocab.current);
 });
 
 // ---------------- início ----------------
@@ -425,7 +566,7 @@ function checkEnvironment() {
     reader.audio = false;
   }
   if (!window.isSecureContext) {
-    notes.push('Aberto sem HTTPS: "manter a tela ligada" e os gestos de cabeça podem não funcionar (veja o README).');
+    notes.push('Aberto sem HTTPS: "manter a tela ligada", os gestos de cabeça e o cache offline das imagens podem não funcionar (veja o README).');
   }
   if (!document.documentElement.requestFullscreen) {
     notes.push('Sem tela cheia neste navegador. No iPhone: Compartilhar → Adicionar à Tela de Início, e abra pelo ícone.');
@@ -440,3 +581,13 @@ if (hasSpeech()) {
 }
 $('text').value = store.get('text', '') || SAMPLE;
 setText($('text').value);
+
+vocabUI = initVocabUI({
+  store,
+  settings,
+  saveSettings,
+  images,
+  speak: (word) => speakOnce(word, 0.9),
+  onStart: () => enterVr('vocab'),
+});
+showTab(settings.tab);
