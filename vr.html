@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>VR Reader · Celular</title>
+  <link rel="manifest" href="manifest-vr.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.07">
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <!-- versão dos módulos: ao publicar mudanças, troque o v= aqui e no script principal
+       (o GitHub Pages guarda os arquivos em cache por 10 min e pode misturar versões) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "./js/engine.js": "./js/engine.js?v=2026.11.07",
+      "./js/input.js": "./js/input.js?v=2026.11.07",
+      "./js/link.js": "./js/link.js?v=2026.11.07",
+      "./js/main.js": "./js/main.js?v=2026.11.07",
+      "./js/reader.js": "./js/reader.js?v=2026.11.07",
+      "./js/sbs.js": "./js/sbs.js?v=2026.11.07",
+      "./js/store.js": "./js/store.js?v=2026.11.07",
+      "./js/text.js": "./js/text.js?v=2026.11.07",
+      "./js/vocab-ui.js": "./js/vocab-ui.js?v=2026.11.07",
+      "./js/vocab.js": "./js/vocab.js?v=2026.11.07",
+      "./js/vr.js": "./js/vr.js?v=2026.11.07"
+    }
+  }
+  </script>
+  <script type="module" src="js/vr.js?v=2026.11.07"></script>
+</head>
+<body>
+  <main id="setup" class="phone-start">
+    <header>
+      <h1>VR Speed <span>R</span>eader</h1>
+      <p class="sub">Celular do VR Box</p>
+    </header>
+
+    <section class="card">
+      <p class="link-state" id="linkState" data-state="no-code"><span class="dot" aria-hidden="true"></span><span id="linkText">Digite o código que aparece no painel</span></p>
+      <form id="codeForm" class="code-form">
+        <label for="code" class="eyebrow">Código do painel</label>
+        <div class="row">
+          <input id="code" class="code-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="000000">
+          <button type="submit">Conectar</button>
+        </div>
+      </form>
+    </section>
+
+    <button id="begin" type="button" class="primary">▶ Começar</button>
+    <p class="muted">Depois de tocar, encaixe o celular no VR Box. A leitura é configurada e controlada pelo painel.</p>
+    <p id="warnings" class="warn"></p>
+  </main>
+
+  <div id="vr" class="vr" hidden>
+    <div class="eye left"></div>
+    <div class="eye right"></div>
+  </div>
+</body>
+</html>

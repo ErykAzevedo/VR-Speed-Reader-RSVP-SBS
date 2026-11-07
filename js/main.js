@@ -1,39 +1,17 @@
-import { parseText, textHash, buildGroups } from './text.js';
-import { Reader, hasSpeech } from './reader.js';
-import { SbsView } from './sbs.js';
-import { Controls, HeadGestures } from './input.js';
-import { ImageStore, VocabPlayer } from './vocab.js';
-import { initVocabUI, formatPace } from './vocab-ui.js';
+// Painel: texto, listas e configurações. Com o celular pareado (vr.html), tudo
+// é enviado para ele na hora e o painel vira controle remoto; sem celular, o
+// VR abre neste mesmo aparelho.
+
+import { store, loadSettings } from './store.js';
+import { hasSpeech, englishVoices } from './reader.js';
+import { ImageStore } from './vocab.js';
+import { initVocabUI } from './vocab-ui.js';
+import { VrEngine } from './engine.js';
+import { PanelLink, newCode } from './link.js';
 
 const $ = (id) => document.getElementById(id);
 
-const store = {
-  get(key, fallback) {
-    try {
-      const v = localStorage.getItem(`vrsr:${key}`);
-      return v == null ? fallback : JSON.parse(v);
-    } catch {
-      return fallback;
-    }
-  },
-  set(key, value) {
-    try {
-      localStorage.setItem(`vrsr:${key}`, JSON.stringify(value));
-    } catch {
-      /* armazenamento cheio ou bloqueado: segue sem salvar */
-    }
-  },
-};
-
-const DEFAULTS = {
-  tab: 'text',
-  wpm: 200, chunk: 1, font: 46, context: false,
-  audio: true, voiceURI: '',
-  mode: 'sbs', shiftX: 0, shiftY: 0, countdown: 5, head: false, headInvert: false,
-  vocabMode: 'word', vocabReps: 3, vocabPace: 2, vocabShuffle: true, vocabCaption: true,
-};
-const settings = { ...DEFAULTS, ...store.get('settings', {}) };
-const saveSettings = () => store.set('settings', settings);
+const settings = loadSettings();
 
 const SAMPLE = `Welcome to your VR speed reader. Each word appears in the same spot, so your eyes can rest while your mind does the work. The red letter marks the point where your eye naturally lands, which helps you recognize each word a little faster.
 
@@ -43,143 +21,274 @@ Start slowly, around two hundred words per minute, and increase the speed as it 
 
 // ---------------- estado ----------------
 
-const view = new SbsView($('vr'));
-let doc = null;
-let docHash = '';
-let lastSaved = 0;
-let inVr = false;
-let session = null; // o que está tocando no VR: 'text' | 'vocab'
-let vocabInfo = null; // { mode, reps, count } da sessão de vocabulário atual
-let preparing = ''; // status enquanto as imagens terminam de carregar
-let wentFullscreen = false;
-let wakeLock = null;
-let countdownLeft = 0;
-let countdownTimer = null;
 let vocabUI = null;
-
-const showing = (kind) => inVr && session === kind;
-
-const reader = new Reader({
-  onWord(i) {
-    if (showing('text')) renderWord(i);
-    if (Date.now() - lastSaved > 5000) savePosition();
-  },
-  onState(state) {
-    if (state !== 'playing') savePosition();
-    if (!showing('text')) return;
-    view.setPaused(state !== 'playing');
-    if (state !== 'playing') renderWord(reader.index);
-    if (state === 'ended') view.flash('✓ fim');
-    renderStatus();
-  },
-  onStats(info) {
-    if (info?.audioError) {
-      settings.audio = false;
-      $('audio').checked = false;
-      saveSettings();
-      warn(`A voz falhou (${info.audioError}); a leitura continuou sem áudio.`);
-    }
-    renderStatus();
-  },
-});
-reader.setWpm(settings.wpm);
-reader.audio = settings.audio && hasSpeech();
+let currentText = '';
+let phone = null; // { device } do celular conectado
+let phoneVoices = null; // vozes do celular conectado
+let phoneStatus = null; // o que está tocando no celular
+let phonePosition = null; // posição de leitura no celular { index, total, hash }
+let showQr = false;
 
 const images = new ImageStore(() => vocabUI?.refresh());
 
-const vocab = new VocabPlayer({
-  onItem(step) {
-    if (showing('vocab')) renderVocabItem(step);
+const engine = new VrEngine({
+  root: $('vr'),
+  settings,
+  store,
+  images,
+  onSettingsChange(patch, note) {
+    // mudou dentro do VR deste aparelho (controle, voz que falhou)
+    store.set('settings', settings);
+    syncUI();
+    if (note) warn(note);
   },
-  onState(state) {
-    if (!showing('vocab')) return;
-    view.setPaused(state !== 'playing');
-    if (state === 'ended') view.flash('✓ fim');
-    renderStatus();
+  onExit() {
+    $('setup').hidden = false;
+    renderTextInfo();
   },
 });
 
-// ---------------- render ----------------
+const link = new PanelLink({
+  onState(state) {
+    // o "hello" do celular pode chegar antes de a conexão contar como aberta:
+    // só esquece o aparelho quando a conexão cai de fato
+    if (state !== 'connected') forgetPhone();
+    renderPair(state);
+  },
+  onConnect: sendEverything,
+  onMessage: handlePhone,
+});
 
-function renderWord(i) {
-  const w = doc?.words[i];
-  if (!w) return;
-  if (settings.chunk > 1 && doc.groups) {
-    const g = doc.groups[w.group];
-    const texts = doc.words.slice(g.start, g.end).map((x) => x.text);
-    view.showChunk(texts, i - g.start, `${docHash}:${g.start}:${g.end}`);
-  } else {
-    view.showWord(w.text);
-  }
-  const chunk = doc.chunks[w.chunk];
-  if (settings.context || !reader.playing) view.showContext(doc.words, chunk.start, chunk.end, i);
-  view.setProgress(doc.words.length > 1 ? i / (doc.words.length - 1) : 1);
+function throttle(fn, ms) {
+  let last = 0;
+  let timer = null;
+  return () => {
+    clearTimeout(timer);
+    const wait = last + ms - Date.now();
+    if (wait <= 0) {
+      last = Date.now();
+      fn();
+    } else {
+      timer = setTimeout(() => {
+        last = Date.now();
+        fn();
+      }, wait);
+    }
+  };
 }
 
-/**
- * Monta os blocos de palavras para a largura real da lente: cabem ~N letras
- * no tamanho de fonte escolhido (refeito ao girar a tela ou mudar o tamanho).
- */
-function regroup() {
-  if (!doc) return;
-  const eye = $('vr').querySelector('.eye');
-  const eyeWidth = eye?.clientWidth || Math.max(innerWidth, innerHeight) / (settings.mode === 'mono' ? 1 : 2);
-  const maxChars = Math.max(8, Math.floor((eyeWidth * 0.9) / (settings.font * 0.55)));
-  buildGroups(doc, settings.chunk, maxChars);
-}
+// arrastar um controle manda várias atualizações por segundo, sem esperar soltar
+const pushSettings = throttle(() => link.send({ type: 'settings', settings }), 80);
 
-function renderVocabItem(step) {
-  if (!step || !vocabInfo) return;
-  const { item, round, pos } = step;
-  if (vocabInfo.mode === 'image') view.showImage(images.src(item.url), item.word);
-  else view.showWord(item.word);
-  view.setRounds(vocabInfo.reps, round, (pos + 1) / vocabInfo.count);
-  renderStatus();
-}
-
-function renderStatus() {
-  if (session === 'vocab') return renderVocabStatus();
-  if (!doc) return;
-  const pct = Math.round((reader.index / Math.max(1, doc.words.length - 1)) * 100);
-  const atEnd = reader.index >= doc.words.length - 1;
-  const state = countdownLeft > 0 ? `Começando em ${countdownLeft}…`
-    : reader.playing ? '▶'
-    : atEnd ? '✓ Fim' : '⏸ Pausado';
-  const audio = reader.audio ? ' · 🔊' : '';
-  view.setStatus(`${state} · ${pct}% · ${reader.effectiveWpm} wpm${audio}`);
-}
-
-function renderVocabStatus() {
-  if (preparing) return view.setStatus(preparing);
-  const step = vocab.current;
-  if (!step || !vocabInfo) return;
-  const noun = vocabInfo.mode === 'image' ? 'imagem' : 'palavra';
-  const where = `Volta ${step.round + 1} de ${vocabInfo.reps} · ${noun} ${step.pos + 1} de ${vocabInfo.count}`;
-  const state = countdownLeft > 0 ? `Começando em ${countdownLeft}…`
-    : vocab.ended ? '✓ Fim'
-    : vocab.playing ? '' : `⏸ Pausado · ${formatPace(vocab.pace)} por palavra`;
-  view.setStatus(state ? `${state} · ${where}` : where);
-}
-
-function renderTextInfo() {
-  const n = doc?.words.length ?? 0;
-  const left = n - reader.index;
-  $('textInfo').textContent = n ? `${n.toLocaleString('pt-BR')} palavras` : '';
-  $('posInfo').textContent = n
-    ? `Posição: ${Math.round((reader.index / Math.max(1, n - 1)) * 100)}% · faltam ~${Math.max(1, Math.round(left / settings.wpm))} min`
-    : '';
-  $('restart').hidden = !n || reader.index === 0;
+function saveSettings() {
+  store.set('settings', settings);
+  engine.applySettings();
+  pushSettings();
 }
 
 function warn(msg) {
   $('warnings').textContent = msg;
 }
 
+// ---------------- celular: pareamento ----------------
+
+const PAIR_TEXT = {
+  unavailable: 'Pareamento indisponível (sem internet?)',
+  starting: 'Registrando o código…',
+  waiting: 'Aguardando o celular',
+  connected: 'Celular conectado',
+  offline: 'Sem conexão com o servidor. Tentando de novo…',
+  taken: 'Código em uso. Gere outro código.',
+};
+
+function setupPairing(code) {
+  store.set('panel:code', code);
+  const url = new URL(`vr.html?c=${code}`, location.href).href;
+  $('pairCode').textContent = code;
+  $('phoneLink').href = url;
+  $('phoneLink').textContent = url.replace(/^https?:\/\//, '').replace(/\?.*$/, '');
+  if (window.qrcode) {
+    const qr = window.qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    $('qr').innerHTML = qr.createSvgTag(4, 8);
+    $('qr').setAttribute('role', 'img');
+    $('qr').setAttribute('aria-label', `QR code para abrir ${url}`);
+  } else {
+    $('qr').textContent = 'QR code indisponível';
+  }
+  const local = /^(localhost|127\.|\[::1\])/.test(location.hostname);
+  $('pairNote').textContent = local
+    ? 'Este painel está em localhost: o celular não abre esse endereço. Use o site publicado ou o IP deste computador na rede.'
+    : '';
+  link.start(code);
+}
+
+function forgetPhone() {
+  phone = null;
+  phoneVoices = null;
+  phoneStatus = null;
+  phonePosition = null;
+  vocabUI?.setPhoneSummary('');
+}
+
+function renderPair(state) {
+  const connected = state === 'connected';
+  $('pairState').dataset.state = state;
+  $('pairText').textContent = connected && phone ? `${phone.device} conectado` : PAIR_TEXT[state] ?? state;
+  $('pairBody').hidden = connected && !showQr;
+  $('pairToggle').hidden = !connected;
+  $('pairToggle').textContent = showQr ? 'Esconder QR code' : 'Mostrar QR code';
+  const startLabel = connected ? '▶ Iniciar no celular' : '▶ Entrar no VR';
+  $('start').textContent = startLabel;
+  $('vocabStart').textContent = startLabel;
+  document.body.classList.toggle('connected', connected);
+  $('remote').hidden = !connected;
+  if (connected) document.body.style.setProperty('--remote-h', `${$('remote').offsetHeight}px`);
+  else document.body.style.removeProperty('--remote-h');
+  renderRemote();
+  renderVoiceSelect();
+  renderTextInfo();
+}
+
+$('newCode').addEventListener('click', () => setupPairing(newCode()));
+$('pairToggle').addEventListener('click', () => {
+  showQr = !showQr;
+  renderPair(link.state);
+});
+
+/** Ao conectar: o celular recebe as configurações, o texto e a lista atuais. */
+function sendEverything() {
+  link.send({ type: 'settings', settings });
+  link.send({ type: 'text', text: currentText });
+  link.send({ type: 'vocab', items: vocabUI.listItems() });
+}
+
+// só estes campos podem ser alterados pelo celular (controle remoto/gestos e voz que falhou)
+const PHONE_EDITABLE = ['wpm', 'vocabPace', 'audio'];
+
+function handlePhone(msg) {
+  switch (msg?.type) {
+    case 'hello':
+      phone = { device: String(msg.device || 'Celular') };
+      phoneVoices = Array.isArray(msg.voices) && msg.voices.length ? msg.voices : null;
+      renderPair(link.state);
+      break;
+    case 'voices':
+      phoneVoices = Array.isArray(msg.voices) && msg.voices.length ? msg.voices : null;
+      renderVoiceSelect();
+      break;
+    case 'status':
+      phoneStatus = msg.status ?? null;
+      phonePosition = msg.position ?? null;
+      renderRemote();
+      renderTextInfo();
+      renderPhoneImages(msg.images);
+      break;
+    case 'settings': {
+      let changed = false;
+      for (const key of PHONE_EDITABLE) {
+        if (msg.patch && key in msg.patch && typeof msg.patch[key] === typeof settings[key]) {
+          settings[key] = msg.patch[key];
+          changed = true;
+        }
+      }
+      if (changed) {
+        store.set('settings', settings);
+        engine.applySettings();
+        syncUI();
+      }
+      if (msg.note) warn(String(msg.note));
+      break;
+    }
+    case 'notice':
+      warn(String(msg.text));
+      $('remoteLabel').textContent = String(msg.text);
+      break;
+    case 'voiceTest':
+      $('voiceInfo').textContent = msg.error ? `Erro na voz do celular: ${msg.error}`
+        : msg.exact ? '✓ Sincronia exata no celular (a voz informa cada palavra)'
+        : 'Sincronia estimada no celular (esta voz não informa as palavras)';
+      break;
+    default:
+      break;
+  }
+}
+
+// ---------------- celular: controle remoto ----------------
+
+for (const button of document.querySelectorAll('[data-remote]')) {
+  button.addEventListener('click', () => link.send({ type: 'action', action: button.dataset.remote }));
+}
+
+function renderRemote() {
+  const st = phoneStatus;
+  $('remote').classList.toggle('playing', st?.state === 'playing');
+  $('remoteDevice').textContent = phone?.device ?? '';
+  let label;
+  let text = '—';
+  let progress = 0;
+  if (!st?.inVr) {
+    label = 'No celular, toque em "Começar" e encaixe no VR Box';
+  } else if (!st.session) {
+    label = 'Pronto no VR · escolha o texto ou a lista e toque em Iniciar';
+  } else {
+    label = st.label || '';
+    text = st.text || '—';
+    progress = st.progress || 0;
+  }
+  $('remoteLabel').textContent = label;
+  $('remoteText').textContent = text;
+  $('remoteBar').style.width = `${(progress * 100).toFixed(1)}%`;
+}
+
+function renderPhoneImages(s) {
+  if (!vocabUI) return;
+  if (!s?.total) return vocabUI.setPhoneSummary('');
+  vocabUI.setPhoneSummary([
+    `No celular: ${s.ok} de ${s.total} prontas`,
+    s.loading && `${s.loading} baixando`,
+    s.failed && `${s.failed} ${s.failed === 1 ? 'falhou' : 'falharam'}`,
+  ].filter(Boolean).join(' · '));
+}
+
+// ---------------- iniciar ----------------
+
+function start(kind) {
+  if (kind === 'text' && !engine.doc?.words.length) {
+    warn('Cole ou abra um texto em inglês primeiro.');
+    return;
+  }
+  const items = kind === 'vocab' ? vocabUI.sessionItems() : null;
+  if (kind === 'vocab' && !items.length) {
+    warn(settings.vocabMode === 'image' ? 'Nenhuma palavra da lista tem imagem carregada.' : 'A lista está vazia.');
+    return;
+  }
+  warn('');
+
+  if (link.connected) {
+    // garante que o celular está com o conteúdo e as configurações de agora
+    link.send({ type: 'settings', settings });
+    if (kind === 'text') link.send({ type: 'text', text: currentText });
+    else link.send({ type: 'vocab', items: vocabUI.listItems() });
+    link.send({ type: 'start', kind });
+    return;
+  }
+
+  // sem celular: abre o VR aqui mesmo (unlock precisa vir antes de qualquer espera)
+  engine.unlock();
+  $('setup').hidden = true;
+  engine.show();
+  engine.start(kind, items);
+}
+
+$('start').addEventListener('click', () => start('text'));
+
 // ---------------- abas ----------------
 
 function showTab(tab) {
   settings.tab = tab;
-  saveSettings();
+  store.set('settings', settings);
   for (const button of document.querySelectorAll('.tabs [role="tab"]')) {
     button.setAttribute('aria-selected', String(button.dataset.tab === tab));
   }
@@ -195,18 +304,22 @@ for (const button of document.querySelectorAll('.tabs [role="tab"]')) {
 // ---------------- texto e posição ----------------
 
 function setText(raw) {
-  doc = parseText(raw);
-  docHash = textHash(raw);
-  const saved = store.get('pos', null);
-  reader.load(doc, saved?.hash === docHash ? saved.index : 0);
+  currentText = raw;
   store.set('text', raw);
+  engine.setText(raw);
   renderTextInfo();
+  link.send({ type: 'text', text: raw });
 }
 
-function savePosition() {
-  if (!doc) return;
-  store.set('pos', { hash: docHash, index: reader.index });
-  lastSaved = Date.now();
+function renderTextInfo() {
+  const n = engine.doc?.words.length ?? 0;
+  const remote = link.connected && phonePosition?.hash === engine.docHash ? phonePosition : null;
+  const index = remote ? remote.index : engine.reader.index;
+  $('textInfo').textContent = n ? `${n.toLocaleString('pt-BR')} palavras` : '';
+  $('posInfo').textContent = n
+    ? `${remote ? 'No celular' : 'Posição'}: ${Math.round((index / Math.max(1, n - 1)) * 100)}% · faltam ~${Math.max(1, Math.round((n - index) / settings.wpm))} min`
+    : '';
+  $('restart').hidden = !n || index === 0;
 }
 
 let typingTimer = null;
@@ -229,138 +342,123 @@ $('sample').addEventListener('click', () => {
 });
 
 $('restart').addEventListener('click', () => {
-  reader.seek(0);
-  savePosition();
+  engine.restart();
+  link.send({ type: 'restart' });
   renderTextInfo();
 });
 
 // ---------------- configurações ----------------
 
+const syncers = [];
+
 function bindRange(id, key, format, onChange) {
   const input = $(id);
   const out = $(`${id}Out`);
-  input.value = settings[key];
-  out.textContent = format(settings[key]);
+  const sync = () => {
+    input.value = settings[key];
+    out.textContent = format(settings[key]);
+  };
+  syncers.push(sync);
   input.addEventListener('input', () => {
     settings[key] = Number(input.value);
     out.textContent = format(settings[key]);
-    onChange?.(settings[key]);
     saveSettings();
+    onChange?.();
   });
 }
 
-function bindCheck(id, key, onChange) {
+function bindCheck(id, key) {
   const input = $(id);
-  input.checked = settings[key];
+  syncers.push(() => (input.checked = settings[key]));
   input.addEventListener('change', () => {
     settings[key] = input.checked;
-    onChange?.(input.checked);
     saveSettings();
+    syncUI();
   });
 }
 
-bindRange('wpm', 'wpm', String, (v) => {
-  reader.setWpm(v);
-  renderTextInfo();
-});
+bindRange('wpm', 'wpm', String, renderTextInfo);
 bindRange('font', 'font', (v) => `${v}px`);
 bindRange('shiftX', 'shiftX', (v) => `${v > 0 ? '+' : ''}${v}px`);
 bindRange('shiftY', 'shiftY', (v) => `${v > 0 ? '+' : ''}${v}px`);
 bindRange('countdown', 'countdown', (v) => (v ? `${v}s` : 'começa na hora'));
 bindCheck('context', 'context');
-bindCheck('audio', 'audio', (on) => reader.setAudio(on && hasSpeech()));
-bindCheck('head', 'head', (on) => ($('headInvert').disabled = !on));
+bindCheck('audio', 'audio');
+bindCheck('head', 'head');
 bindCheck('headInvert', 'headInvert');
-$('headInvert').disabled = !settings.head;
 
-$('mode').value = settings.mode;
 $('mode').addEventListener('change', () => {
   settings.mode = $('mode').value;
   saveSettings();
 });
 
-function renderChunkSetting() {
+for (const button of document.querySelectorAll('[data-chunk]')) {
+  button.addEventListener('click', () => {
+    settings.chunk = Number(button.dataset.chunk);
+    saveSettings();
+    syncUI();
+  });
+}
+
+/** Mostra nos controles o que está em `settings` (mudou pelo celular ou pelo VR). */
+function syncUI() {
+  for (const sync of syncers) sync();
+  $('mode').value = settings.mode;
+  $('headInvert').disabled = !settings.head;
   for (const button of document.querySelectorAll('[data-chunk]')) {
     button.setAttribute('aria-pressed', String(Number(button.dataset.chunk) === settings.chunk));
   }
   $('chunkHint').textContent = settings.chunk === 1
     ? 'Uma palavra por vez, com a letra de foco em vermelho.'
     : `Blocos de até ${settings.chunk} palavras, agrupados por sentido. A palavra falada fica sublinhada.`;
-}
-for (const button of document.querySelectorAll('[data-chunk]')) {
-  button.addEventListener('click', () => {
-    settings.chunk = Number(button.dataset.chunk);
-    saveSettings();
-    renderChunkSetting();
-  });
-}
-renderChunkSetting();
-
-function changeWpm(delta) {
-  reader.setWpm(reader.wpm + delta);
-  settings.wpm = reader.wpm;
-  $('wpm').value = settings.wpm;
-  $('wpmOut').textContent = settings.wpm;
-  saveSettings();
-  view.flash(`${settings.wpm} wpm`);
-}
-
-function changePace(delta) {
-  settings.vocabPace = Math.min(10, Math.max(1, Math.round((settings.vocabPace + delta) * 2) / 2));
-  vocab.setPace(settings.vocabPace);
-  saveSettings();
   vocabUI?.refresh();
-  view.flash(`${formatPace(settings.vocabPace)} por palavra`);
+  renderTextInfo();
 }
 
 // ---------------- vozes ----------------
 
-let voices = [];
-
-function loadVoices() {
-  if (!hasSpeech()) return;
-  voices = speechSynthesis
-    .getVoices()
-    .filter((v) => /^en([-_]|$)/i.test(v.lang))
-    .sort((a, b) =>
-      (b.lang.replace('_', '-') === 'en-US') - (a.lang.replace('_', '-') === 'en-US')
-      || b.localService - a.localService
-      || a.name.localeCompare(b.name));
+/** Com o celular conectado, a lista mostra as vozes DELE (cada aparelho tem as suas). */
+function renderVoiceSelect() {
+  const list = phoneVoices ?? englishVoices().map((v) => ({
+    uri: v.voiceURI, name: v.name, lang: v.lang, local: v.localService, default: v.default,
+  }));
   const select = $('voice');
-  select.replaceChildren(...voices.map((v) => {
+  select.replaceChildren(...list.map((v) => {
     const opt = document.createElement('option');
-    opt.value = v.voiceURI;
-    opt.textContent = `${v.name} (${v.lang})${v.localService ? '' : ' · online'}`;
+    opt.value = v.uri;
+    opt.textContent = `${v.name} (${v.lang})${v.local ? '' : ' · online'}`;
     return opt;
   }));
-  const chosen = voices.find((v) => v.voiceURI === settings.voiceURI)
-    ?? voices.find((v) => v.default)
-    ?? voices[0];
-  if (chosen) select.value = chosen.voiceURI;
-  reader.setVoice(chosen ?? null);
+  const chosen = list.find((v) => v.uri === settings.voiceURI) ?? list.find((v) => v.default) ?? list[0];
+  if (chosen) select.value = chosen.uri;
+  $('voiceSource').textContent = phoneVoices ? '· vozes do celular' : '';
   // no Chrome as vozes chegam depois (voiceschanged): a lista vazia inicial não é definitiva
-  $('voiceInfo').textContent = voices.length ? '' : 'Nenhuma voz em inglês encontrada (será usada a voz padrão).';
+  if (!phoneVoices) $('voiceInfo').textContent = list.length ? '' : 'Nenhuma voz em inglês encontrada (será usada a voz padrão).';
 }
 
 $('voice').addEventListener('change', () => {
   settings.voiceURI = $('voice').value;
   saveSettings();
-  reader.setVoice(voices.find((v) => v.voiceURI === settings.voiceURI) ?? null);
   $('voiceInfo').textContent = '';
 });
 
-function speakOnce(text, rate = reader.rate) {
+function speakOnce(text, rate = engine.reader.rate) {
   if (!hasSpeech()) return null;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
-  u.voice = reader.voice;
-  u.lang = reader.voice?.lang || 'en-US';
+  u.voice = engine.reader.voice;
+  u.lang = engine.reader.voice?.lang || 'en-US';
   u.rate = rate;
   speechSynthesis.speak(u);
   return u;
 }
 
 $('testVoice').addEventListener('click', () => {
+  if (link.connected) {
+    link.send({ type: 'testVoice' });
+    $('voiceInfo').textContent = 'Falando no celular…';
+    return;
+  }
   const u = speakOnce('This is how your reading voice sounds.');
   if (!u) return;
   let boundaries = 0;
@@ -376,250 +474,17 @@ $('testVoice').addEventListener('click', () => {
   $('voiceInfo').textContent = 'Falando…';
 });
 
-// ---------------- modo VR ----------------
-
-const player = () => (session === 'vocab' ? vocab : reader);
-
-const actions = {
-  toggle() {
-    if (preparing) return;
-    if (countdownLeft > 0) {
-      cancelCountdown();
-      player().play();
-    } else {
-      player().toggle();
-    }
-    view.flash(player().playing ? '▶' : '⏸');
-  },
-  next() {
-    if (preparing) return;
-    cancelCountdown();
-    if (session === 'vocab') vocab.next();
-    else reader.nextChunk();
-    view.flash('⏭');
-    renderStatus();
-  },
-  prev() {
-    if (preparing) return;
-    cancelCountdown();
-    if (session === 'vocab') vocab.prev();
-    else reader.prevChunk();
-    view.flash('⏮');
-    renderStatus();
-  },
-  faster: () => (session === 'vocab' ? changePace(-0.5) : changeWpm(+20)),
-  slower: () => (session === 'vocab' ? changePace(+0.5) : changeWpm(-20)),
-  exit: () => exitVr(),
-};
-
-const controls = new Controls($('vr'), actions);
-const head = new HeadGestures((gesture) => actions[gesture]());
-
-$('start').addEventListener('click', () => enterVr('text'));
-
-async function enterVr(kind) {
-  let items = null;
-  if (kind === 'text' && !doc?.words.length) {
-    warn('Cole ou abra um texto em inglês primeiro.');
-    return;
-  }
-  if (kind === 'vocab') {
-    items = vocabUI.sessionItems();
-    if (!items.length) {
-      warn(settings.vocabMode === 'image'
-        ? 'Nenhuma palavra da lista tem imagem carregada.'
-        : 'A lista está vazia.');
-      return;
-    }
-  }
-  warn('');
-
-  // Tudo que exige gesto do usuário é disparado aqui, antes de qualquer await.
-  if (settings.audio && hasSpeech()) {
-    const unlock = new SpeechSynthesisUtterance(' ');
-    unlock.volume = 0;
-    speechSynthesis.speak(unlock);
-  }
-  const headAllowed = settings.head ? HeadGestures.requestPermission() : Promise.resolve(false);
-  const fullscreen = document.documentElement.requestFullscreen
-    ? document.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(() => true, () => false)
-    : Promise.resolve(false);
-
-  inVr = true;
-  session = kind;
-  document.activeElement?.blur(); // evita que Espaço/Enter "clique" de novo no botão
-  $('setup').hidden = true;
-  $('vr').hidden = false;
-  view.apply({
-    fontSize: settings.font,
-    shiftX: settings.shiftX,
-    shiftY: settings.shiftY,
-    mono: settings.mode === 'mono',
-    showContext: settings.context,
-  });
-  view.setPaused(true);
-  if (kind === 'text') {
-    view.setMode('text');
-    regroup();
-    renderWord(reader.index);
-  } else {
-    view.setMode(settings.vocabMode, { caption: settings.vocabCaption });
-    view.showWord('');
-    view.showImage('', '');
-  }
-  controls.start();
-  if (kind === 'text') startCountdown(() => reader.play());
-  else startVocab(items);
-
-  wentFullscreen = await fullscreen;
-  if (wentFullscreen) screen.orientation?.lock?.('landscape').catch(() => {});
-  requestWakeLock();
-
-  if (await headAllowed) {
-    head.invert = settings.headInvert;
-    // o "neutro" da cabeça é medido depois que o celular já está no VR Box
-    head.start(Math.max(1500, settings.countdown * 1000));
-  } else if (settings.head) {
-    view.flash('sem sensor');
-  }
-}
-
-async function startVocab(items) {
-  const mode = settings.vocabMode;
-  if (mode === 'image') {
-    // espera as imagens que ainda estão baixando; as que falharem ficam de fora
-    const urls = items.map((i) => i.url);
-    const update = () => {
-      const ready = urls.filter((u) => images.state(u) === 'ok').length;
-      preparing = `Preparando imagens ${ready} de ${urls.length}…`;
-      renderStatus();
-    };
-    update();
-    const ticker = setInterval(update, 300);
-    await images.whenSettled(urls);
-    clearInterval(ticker);
-    preparing = '';
-    if (!showing('vocab')) return; // saiu do VR durante o preparo
-    items = items.filter((i) => images.state(i.url) === 'ok');
-    if (!items.length) {
-      view.setStatus('Nenhuma imagem carregou. Saia (toque longo) e confira os links.');
-      return;
-    }
-  }
-  vocabInfo = { mode, reps: settings.vocabReps, count: items.length };
-  vocab.audio = settings.audio && hasSpeech();
-  vocab.voice = reader.voice;
-  vocab.setPace(settings.vocabPace);
-  vocab.setup(items, { reps: settings.vocabReps, shuffle: settings.vocabShuffle });
-  renderVocabItem(vocab.current);
-  startCountdown(() => vocab.play());
-}
-
-function exitVr() {
-  if (!inVr) return;
-  cancelCountdown();
-  reader.pause();
-  vocab.pause();
-  inVr = false;
-  session = null;
-  preparing = '';
-  controls.stop();
-  head.stop();
-  wakeLock?.release().catch(() => {});
-  wakeLock = null;
-  try {
-    screen.orientation?.unlock?.();
-  } catch {
-    /* sem suporte */
-  }
-  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-  $('vr').hidden = true;
-  $('setup').hidden = false;
-  savePosition();
-  renderTextInfo();
-}
-
-function startCountdown(onDone) {
-  cancelCountdown();
-  countdownLeft = settings.countdown;
-  if (!countdownLeft) {
-    onDone();
-    return;
-  }
-  renderStatus();
-  countdownTimer = setInterval(() => {
-    countdownLeft--;
-    renderStatus();
-    if (countdownLeft <= 0) {
-      cancelCountdown();
-      onDone();
-    }
-  }, 1000);
-}
-
-function cancelCountdown() {
-  clearInterval(countdownTimer);
-  countdownTimer = null;
-  countdownLeft = 0;
-}
-
-async function requestWakeLock() {
-  try {
-    wakeLock = await navigator.wakeLock?.request('screen');
-  } catch {
-    wakeLock = null;
-  }
-}
-
-document.addEventListener('fullscreenchange', () => {
-  // botão Voltar do Android sai da tela cheia: sai do VR junto
-  if (!document.fullscreenElement && inVr && wentFullscreen) exitVr();
-});
-
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') {
-    reader.pause();
-    vocab.pause();
-    savePosition();
-  } else if (inVr) {
-    requestWakeLock();
-  }
-});
-
-window.addEventListener('resize', () => {
-  if (showing('text')) {
-    regroup();
-    view.invalidate();
-    renderWord(reader.index);
-  } else if (showing('vocab')) {
-    renderVocabItem(vocab.current);
-  }
-});
-
 // ---------------- início ----------------
 
 function checkEnvironment() {
   const notes = [];
-  if (!hasSpeech()) {
-    notes.push('Este navegador não tem síntese de voz: a leitura será só visual.');
-    $('audio').checked = false;
-    $('audio').disabled = true;
-    reader.audio = false;
-  }
-  if (!window.isSecureContext) {
-    notes.push('Aberto sem HTTPS: "manter a tela ligada", os gestos de cabeça e o cache offline das imagens podem não funcionar (veja o README).');
-  }
-  if (!document.documentElement.requestFullscreen) {
-    notes.push('Sem tela cheia neste navegador. No iPhone: Compartilhar → Adicionar à Tela de Início, e abra pelo ícone.');
-  }
+  if (!hasSpeech()) notes.push('Este navegador não tem síntese de voz: sem celular pareado, a leitura será só visual.');
+  if (!window.Peer) notes.push('Não deu para carregar o pareamento com o celular (sem internet?). O VR ainda abre neste aparelho.');
   warn(notes.join('\n'));
 }
 
 checkEnvironment();
-if (hasSpeech()) {
-  loadVoices();
-  speechSynthesis.onvoiceschanged = loadVoices;
-}
+if (hasSpeech()) speechSynthesis.addEventListener?.('voiceschanged', renderVoiceSelect);
 $('text').value = store.get('text', '') || SAMPLE;
 setText($('text').value);
 
@@ -629,6 +494,13 @@ vocabUI = initVocabUI({
   saveSettings,
   images,
   speak: (word) => speakOnce(word, 0.9),
-  onStart: () => enterVr('vocab'),
+  onStart: () => start('vocab'),
+  onListChange: (items) => link.send({ type: 'vocab', items }),
 });
 showTab(settings.tab);
+syncUI();
+renderVoiceSelect();
+setupPairing(store.get('panel:code', null) ?? newCode());
+window.addEventListener('resize', () => {
+  if (link.connected) document.body.style.setProperty('--remote-h', `${$('remote').offsetHeight}px`);
+});

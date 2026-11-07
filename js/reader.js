@@ -12,6 +12,18 @@ const START_TIMEOUT_MS = 4000;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 export const hasSpeech = () => 'speechSynthesis' in window;
 
+/** Vozes em inglês do aparelho: en-US primeiro, depois as que funcionam offline. */
+export function englishVoices() {
+  if (!hasSpeech()) return [];
+  return speechSynthesis
+    .getVoices()
+    .filter((v) => /^en([-_]|$)/i.test(v.lang))
+    .sort((a, b) =>
+      (b.lang.replace('_', '-') === 'en-US') - (a.lang.replace('_', '-') === 'en-US')
+      || b.localService - a.localService
+      || a.name.localeCompare(b.name));
+}
+
 export class Reader {
   constructor({ onWord, onState, onStats }) {
     this.onWord = onWord;

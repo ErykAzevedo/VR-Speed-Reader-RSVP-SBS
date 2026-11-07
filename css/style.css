@@ -112,6 +112,81 @@ button.primary {
 .help td:first-child { color: var(--muted); width: 42%; }
 .help summary { cursor: pointer; font-weight: 600; }
 
+/* ---------- pareamento com o celular ---------- */
+
+.pair h2 { margin: 0; }
+.link-state { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; color: var(--muted); }
+.link-state .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: #5c6470; }
+.link-state[data-state="connected"] { color: var(--text); }
+.link-state[data-state="connected"] .dot { background: var(--accent-2); }
+.link-state[data-state="waiting"] .dot,
+.link-state[data-state="starting"] .dot,
+.link-state[data-state="searching"] .dot { background: #ffb340; animation: pulse 1.4s ease-in-out infinite; }
+.link-state[data-state="offline"] .dot,
+.link-state[data-state="unavailable"] .dot,
+.link-state[data-state="taken"] .dot { background: var(--accent); }
+@keyframes pulse { 50% { opacity: 0.3; } }
+
+.pair-body { display: flex; align-items: center; gap: 16px; margin-top: 12px; }
+.qr { flex: none; width: 148px; height: 148px; overflow: hidden; border-radius: 10px; background: #fff; color: #0b0d10; font-size: 12px; }
+.qr svg { display: block; width: 100%; height: 100%; }
+.steps { display: flex; flex-direction: column; gap: 6px; margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.5; color: #c3c8cf; }
+.steps a { word-break: break-all; }
+.code { font-variant-numeric: tabular-nums; letter-spacing: 0.12em; color: var(--text); }
+.pair .row { margin-top: 8px; }
+@media (max-width: 420px) {
+  .pair-body { flex-direction: column; align-items: stretch; }
+  .qr { align-self: center; }
+}
+
+/* ---------- controle remoto (painel com celular conectado) ---------- */
+
+body.connected #setup { padding-bottom: calc(var(--remote-h, 150px) + 16px); }
+
+.remote {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: rgba(11, 13, 16, 0.96);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.remote-inner { display: flex; flex-direction: column; gap: 6px; max-width: 640px; margin: 0 auto; }
+.remote-top { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.remote-label { min-width: 0; overflow: hidden; color: #c3c8cf; white-space: nowrap; text-overflow: ellipsis; }
+.remote-text { overflow: hidden; font-size: 22px; font-weight: 600; text-align: center; white-space: nowrap; text-overflow: ellipsis; }
+.remote .meter { height: 4px; margin: 0; }
+.remote-buttons { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.remote-buttons button { height: 48px; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; }
+.remote-buttons .play { border: 0; background: var(--accent); color: #fff; }
+.remote .i-pause, .remote.playing .i-play { display: none; }
+.remote.playing .i-pause { display: inline; }
+
+/* ---------- tela inicial do celular (vr.html) ---------- */
+
+.phone-start .link-state { font-size: 15px; }
+.code-form { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.code-form label { margin: 0; }
+.code-form .row { flex-wrap: nowrap; margin: 0; }
+.code-form button { height: 52px; }
+.code-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 52px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0e1116;
+  color: var(--text);
+  font: 600 26px/1 ui-monospace, Menlo, monospace;
+  letter-spacing: 0.2em;
+  text-align: center;
+}
+
 /* ---------- abas ---------- */
 
 .tabs {
@@ -214,7 +289,7 @@ button.icon {
 
 .actionbar {
   position: sticky;
-  bottom: 0;
+  bottom: var(--remote-h, 0px);
   z-index: 2;
   margin: 0 -16px 14px;
   padding: 12px 16px calc(12px + env(safe-area-inset-bottom));

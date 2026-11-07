@@ -1,0 +1,15 @@
+{
+  "id": "./vr.html",
+  "name": "VR Speed Reader · Celular",
+  "short_name": "VR Reader",
+  "description": "Tela do VR Box: recebe a leitura configurada no painel.",
+  "start_url": "./vr.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

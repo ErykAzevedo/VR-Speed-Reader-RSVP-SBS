@@ -9,6 +9,15 @@ const LOAD_TIMEOUT_MS = 20000;
 
 const unquote = (s) => s.trim().replace(/^["']|["']$/g, '').trim();
 
+export const formatPace = (p) => `${String(p).replace('.', ',')} s`;
+
+/** Itens que entram na sessão: no modo imagem, só os que têm link que não falhou. */
+export function sessionItems(items, mode, images) {
+  return mode === 'image'
+    ? items.filter((i) => i.url && images.state(i.url) !== 'error')
+    : items.slice();
+}
+
 /**
  * Uma palavra por linha: "palavra, link" (também aceita ; ou tab, e linha só com a palavra).
  * Linhas cujo segundo campo não é um link (ex.: cabeçalho do CSV) são ignoradas.

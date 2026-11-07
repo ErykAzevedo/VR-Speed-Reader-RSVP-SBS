@@ -1,7 +1,7 @@
 // Aba "Vocabulário": listas de palavras com link de imagem e a configuração
 // da sessão (modo, repetições, tempo por palavra).
 
-import { parseVocabLines } from './vocab.js';
+import { parseVocabLines, sessionItems } from './vocab.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -31,8 +31,6 @@ function listNames(words) {
   return words.length <= 3 ? words.join(', ') : `${words.slice(0, 2).join(', ')} e mais ${words.length - 2}`;
 }
 
-export const formatPace = (p) => `${String(p).replace('.', ',')} s`;
-
 /**
  * @param {object} o
  * @param {{get: Function, set: Function}} o.store
@@ -40,13 +38,17 @@ export const formatPace = (p) => `${String(p).replace('.', ',')} s`;
  * @param {import('./vocab.js').ImageStore} o.images
  * @param {(word: string) => void} o.speak
  * @param {() => void} o.onStart  entrar no VR com a lista atual
+ * @param {(items: object[]) => void} [o.onListChange]  a lista atual mudou (para mandar ao celular)
  */
-export function initVocabUI({ store, settings, saveSettings, images, speak, onStart }) {
+export function initVocabUI({ store, settings, saveSettings, images, speak, onStart, onListChange }) {
   let data = store.get('vocab', null);
   if (!data?.lists?.length) data = { lists: [emptyList()], current: null };
   if (!data.lists.some((l) => l.id === data.current)) data.current = data.lists[0].id;
-  const save = () => store.set('vocab', data);
   const list = () => data.lists.find((l) => l.id === data.current);
+  const save = () => {
+    store.set('vocab', data);
+    onListChange?.(list().items);
+  };
 
   // ---------- adicionar palavras ----------
 
@@ -324,9 +326,12 @@ export function initVocabUI({ store, settings, saveSettings, images, speak, onSt
       $('precacheIssues').textContent = issues || 'Todas as imagens estão prontas.';
       $('precacheIssues').classList.toggle('ok', !issues);
       $('precacheRetry').hidden = !s.failed.length;
+      $('precachePhone').textContent = phoneSummary;
     }
     $('vocabStart').disabled = !usable;
   }
+
+  let phoneSummary = '';
 
   // agrupa várias imagens terminando juntas num só render (setTimeout, e não
   // requestAnimationFrame, que fica parado com a página em segundo plano)
@@ -344,12 +349,15 @@ export function initVocabUI({ store, settings, saveSettings, images, speak, onSt
 
   return {
     refresh,
+    /** Itens da lista atual. */
+    listItems: () => list().items,
     /** Itens da lista atual que entram na sessão, conforme o modo. */
-    sessionItems() {
-      const items = list().items;
-      return settings.vocabMode === 'image'
-        ? items.filter((i) => i.url && images.state(i.url) !== 'error')
-        : items.slice();
+    sessionItems: () => sessionItems(list().items, settings.vocabMode, images),
+    /** Estado das imagens no celular conectado ('' sem celular). */
+    setPhoneSummary(text) {
+      if (text === phoneSummary) return;
+      phoneSummary = text;
+      refresh();
     },
   };
 }

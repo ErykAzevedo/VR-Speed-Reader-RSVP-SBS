@@ -10,15 +10,57 @@
   <title>VR Speed Reader</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css">
-  <script type="module" src="js/main.js"></script>
+  <link rel="stylesheet" href="css/style.css?v=2026.11.07">
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+  <!-- versão dos módulos: ao publicar mudanças, troque o v= aqui e no script principal
+       (o GitHub Pages guarda os arquivos em cache por 10 min e pode misturar versões) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "./js/engine.js": "./js/engine.js?v=2026.11.07",
+      "./js/input.js": "./js/input.js?v=2026.11.07",
+      "./js/link.js": "./js/link.js?v=2026.11.07",
+      "./js/main.js": "./js/main.js?v=2026.11.07",
+      "./js/reader.js": "./js/reader.js?v=2026.11.07",
+      "./js/sbs.js": "./js/sbs.js?v=2026.11.07",
+      "./js/store.js": "./js/store.js?v=2026.11.07",
+      "./js/text.js": "./js/text.js?v=2026.11.07",
+      "./js/vocab-ui.js": "./js/vocab-ui.js?v=2026.11.07",
+      "./js/vocab.js": "./js/vocab.js?v=2026.11.07",
+      "./js/vr.js": "./js/vr.js?v=2026.11.07"
+    }
+  }
+  </script>
+  <script type="module" src="js/main.js?v=2026.11.07"></script>
 </head>
 <body>
   <main id="setup">
     <header>
       <h1>VR Speed <span>R</span>eader</h1>
-      <p class="sub">RSVP lado a lado (SBS) com narração em inglês para VR Box</p>
+      <p class="sub">Painel · RSVP lado a lado (SBS) com narração em inglês para VR Box</p>
     </header>
+
+    <!-- ===== Pareamento com o celular ===== -->
+    <section class="card pair" id="pairCard">
+      <div class="between">
+        <h2>Celular no VR Box</h2>
+        <p class="link-state" id="pairState" data-state="starting"><span class="dot" aria-hidden="true"></span><span id="pairText">Preparando…</span></p>
+      </div>
+      <div class="pair-body" id="pairBody">
+        <div id="qr" class="qr"></div>
+        <ol class="steps">
+          <li>No celular, leia o QR code ou abra <a id="phoneLink" href="vr.html">vr.html</a> e digite o código <strong id="pairCode" class="code">——————</strong></li>
+          <li>Toque em <strong>Começar</strong> e encaixe o celular no VR Box.</li>
+          <li>Configure aqui: tudo é aplicado no celular na hora.</li>
+        </ol>
+      </div>
+      <p id="pairNote" class="muted small"></p>
+      <div class="row">
+        <button id="pairToggle" type="button" class="link" hidden>Mostrar QR code</button>
+        <button id="newCode" type="button" class="link">Gerar outro código</button>
+      </div>
+    </section>
 
     <div class="tabs" role="tablist" aria-label="O que ler">
       <button type="button" role="tab" id="tabText" aria-controls="panelText" data-tab="text">Texto</button>
@@ -169,6 +211,7 @@
             <span id="precacheIssues" class="issues" aria-live="polite"></span>
             <button id="precacheRetry" type="button">Tentar de novo</button>
           </div>
+          <p id="precachePhone" class="muted small"></p>
         </section>
 
         <p id="wordModeNote" class="note"></p>
@@ -181,7 +224,7 @@
     <section class="card">
       <h2>Áudio</h2>
       <label class="check"><input type="checkbox" id="audio"> Narração em inglês (TTS) sincronizada</label>
-      <label>Voz <select id="voice"></select></label>
+      <label>Voz <span id="voiceSource" class="muted small"></span> <select id="voice"></select></label>
       <div class="row">
         <button id="testVoice" type="button">Testar voz</button>
         <span id="voiceInfo" class="muted"></span>
@@ -221,6 +264,35 @@
         <tr><td>Sair do VR</td><td>Toque longo na tela · Esc · Select · botão Voltar</td></tr>
       </table>
     </details>
+
+    <!-- ===== Controle remoto (com o celular conectado) ===== -->
+    <div id="remote" class="remote" hidden>
+      <div class="remote-inner">
+        <div class="remote-top">
+          <span id="remoteLabel" class="remote-label"></span>
+          <span id="remoteDevice" class="muted small"></span>
+        </div>
+        <div id="remoteText" class="remote-text">—</div>
+        <div class="meter"><div id="remoteBar"></div></div>
+        <div class="remote-buttons">
+          <button type="button" data-remote="prev" aria-label="Voltar">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg>
+          </button>
+          <button type="button" data-remote="toggle" class="play" aria-label="Play ou pausa">
+            <svg class="i-play" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l12-7.5z"/></svg>
+            <svg class="i-pause" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+          </button>
+          <button type="button" data-remote="next" aria-label="Avançar">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg>
+          </button>
+          <button type="button" data-remote="slower" aria-label="Mais devagar">−</button>
+          <button type="button" data-remote="faster" aria-label="Mais rápido">+</button>
+          <button type="button" data-remote="stop" aria-label="Parar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
   </main>
 
   <div id="vr" class="vr" hidden>

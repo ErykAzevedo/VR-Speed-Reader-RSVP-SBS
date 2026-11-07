@@ -1,13 +1,13 @@
 {
-  "name": "VR Speed Reader",
-  "short_name": "VR Reader",
-  "description": "Leitor RSVP lado a lado (SBS) com narração em inglês para VR Box.",
+  "id": "./",
+  "name": "VR Speed Reader · Painel",
+  "short_name": "VR Painel",
+  "description": "Painel do leitor RSVP lado a lado (SBS) com narração em inglês para VR Box.",
   "start_url": "./",
   "scope": "./",
-  "display": "fullscreen",
-  "orientation": "landscape",
-  "background_color": "#000000",
-  "theme_color": "#000000",
+  "display": "standalone",
+  "background_color": "#0b0d10",
+  "theme_color": "#0b0d10",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ]

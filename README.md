@@ -6,13 +6,46 @@ tempo, sem distrações em volta.
 
 É um web app: roda no navegador do celular (Android ou iPhone), sem instalar nada, sem Unity e sem loja.
 
-**Abrir:** https://erykazevedo.github.io/VR-Speed-Reader-RSVP-SBS/
+**Painel:** https://erykazevedo.github.io/VR-Speed-Reader-RSVP-SBS/ · **Celular:** `…/vr.html`
+
+## Painel + celular
+
+Configurar com o celular preso no óculos é difícil, então são dois endereços:
+
+| Endereço | Onde abrir | O que faz |
+| --- | --- | --- |
+| `index.html` (painel) | computador, tablet ou outro celular | texto, listas, todas as configurações e o controle remoto |
+| `vr.html` (celular) | o celular que vai no VR Box | só a tela do VR |
+
+1. Abra o **painel**. Ele mostra um **QR code** e um código de 6 dígitos.
+2. No celular do VR Box, leia o QR code (ou abra `vr.html` e digite o código).
+3. Toque em **Começar** no celular: a tela cheia e a voz só podem ser liberadas com um toque no
+   próprio aparelho. Encaixe o celular no VR Box.
+4. Configure no painel: fonte, ajuste das lentes, velocidade, voz, palavras por vez… tudo é aplicado
+   no celular **na hora**, inclusive com a leitura rodando. A lista de vozes do painel passa a ser a
+   do celular.
+5. **▶ Iniciar no celular** começa a leitura (ou a sessão de vocabulário). A barra de controle remoto
+   embaixo mostra o que está tocando e tem ⏮ ⏯ ⏭, − / + velocidade e ■ parar.
+
+O código fica salvo nos dois aparelhos: da próxima vez basta abrir o painel e o `vr.html` que eles
+se reconectam sozinhos. Sem celular pareado, o painel continua abrindo o VR no próprio aparelho.
+
+A conexão é direta entre os dois aparelhos (WebRTC, via [PeerJS](https://peerjs.com)). O servidor
+público do PeerJS só apresenta um aparelho ao outro: o texto e os comandos vão criptografados de um
+para o outro, sem passar por servidor nosso. Por isso os dois aparelhos precisam de internet para
+parear (funciona melhor na mesma rede Wi-Fi).
 
 ## Rodar localmente
 
 ```bash
-python3 -m http.server 8080 --bind 0.0.0.0
+python3 .claude/devserver.py 8080
 ```
+
+(é o `http.server` do Python sem cache, para os módulos sempre virem atualizados)
+
+**Ao publicar mudanças:** troque o `v=` do *import map* e do script principal em `index.html` e
+`vr.html`. O GitHub Pages guarda os arquivos em cache por 10 minutos, e sem isso o navegador pode
+misturar módulos novos e antigos.
 
 - No computador: http://localhost:8080
 - No celular (mesma rede Wi-Fi): `http://<IP-do-Mac>:8080` — descubra o IP com `ipconfig getifaddr en0`.
@@ -103,7 +136,11 @@ texto ──► text.js ──► palavras + frases (chunks de até ~28 palavras
 | `js/input.js` | teclado, botões de mídia, gamepad, toque e gestos de cabeça |
 | `js/vocab.js` | lista `palavra, link`, cache das imagens, player com repetições |
 | `js/vocab-ui.js` | aba Vocabulário: listas, estado das imagens, configuração da sessão |
-| `js/main.js` | abas, vozes, tela cheia, wake lock, posição salva, sessões no VR |
+| `js/engine.js` | o VR em si: tela cheia, wake lock, sessões de texto e vocabulário, status |
+| `js/link.js` | pareamento painel ↔ celular (PeerJS) com reconexão automática |
+| `js/store.js` | armazenamento local e configurações padrão |
+| `js/main.js` | painel: abas, configurações, vozes, QR code, controle remoto |
+| `js/vr.js` | celular: aplica o que chega do painel e devolve o status |
 
 ## Próximos passos sugeridos
 
