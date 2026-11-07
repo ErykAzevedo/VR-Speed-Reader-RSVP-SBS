@@ -1,4 +1,4 @@
-import { parseText, textHash } from './text.js';
+import { parseText, textHash, buildGroups } from './text.js';
 import { Reader, hasSpeech } from './reader.js';
 import { SbsView } from './sbs.js';
 import { Controls, HeadGestures } from './input.js';
@@ -27,7 +27,7 @@ const store = {
 
 const DEFAULTS = {
   tab: 'text',
-  wpm: 200, font: 46, context: false,
+  wpm: 200, chunk: 1, font: 46, context: false,
   audio: true, voiceURI: '',
   mode: 'sbs', shiftX: 0, shiftY: 0, countdown: 5, head: false, headInvert: false,
   vocabMode: 'word', vocabReps: 3, vocabPace: 2, vocabShuffle: true, vocabCaption: true,
@@ -104,10 +104,28 @@ const vocab = new VocabPlayer({
 function renderWord(i) {
   const w = doc?.words[i];
   if (!w) return;
-  view.showWord(w.text);
+  if (settings.chunk > 1 && doc.groups) {
+    const g = doc.groups[w.group];
+    const texts = doc.words.slice(g.start, g.end).map((x) => x.text);
+    view.showChunk(texts, i - g.start, `${docHash}:${g.start}:${g.end}`);
+  } else {
+    view.showWord(w.text);
+  }
   const chunk = doc.chunks[w.chunk];
   if (settings.context || !reader.playing) view.showContext(doc.words, chunk.start, chunk.end, i);
   view.setProgress(doc.words.length > 1 ? i / (doc.words.length - 1) : 1);
+}
+
+/**
+ * Monta os blocos de palavras para a largura real da lente: cabem ~N letras
+ * no tamanho de fonte escolhido (refeito ao girar a tela ou mudar o tamanho).
+ */
+function regroup() {
+  if (!doc) return;
+  const eye = $('vr').querySelector('.eye');
+  const eyeWidth = eye?.clientWidth || Math.max(innerWidth, innerHeight) / (settings.mode === 'mono' ? 1 : 2);
+  const maxChars = Math.max(8, Math.floor((eyeWidth * 0.9) / (settings.font * 0.55)));
+  buildGroups(doc, settings.chunk, maxChars);
 }
 
 function renderVocabItem(step) {
@@ -260,6 +278,23 @@ $('mode').addEventListener('change', () => {
   settings.mode = $('mode').value;
   saveSettings();
 });
+
+function renderChunkSetting() {
+  for (const button of document.querySelectorAll('[data-chunk]')) {
+    button.setAttribute('aria-pressed', String(Number(button.dataset.chunk) === settings.chunk));
+  }
+  $('chunkHint').textContent = settings.chunk === 1
+    ? 'Uma palavra por vez, com a letra de foco em vermelho.'
+    : `Blocos de até ${settings.chunk} palavras, agrupados por sentido. A palavra falada fica sublinhada.`;
+}
+for (const button of document.querySelectorAll('[data-chunk]')) {
+  button.addEventListener('click', () => {
+    settings.chunk = Number(button.dataset.chunk);
+    saveSettings();
+    renderChunkSetting();
+  });
+}
+renderChunkSetting();
 
 function changeWpm(delta) {
   reader.setWpm(reader.wpm + delta);
@@ -425,6 +460,7 @@ async function enterVr(kind) {
   view.setPaused(true);
   if (kind === 'text') {
     view.setMode('text');
+    regroup();
     renderWord(reader.index);
   } else {
     view.setMode(settings.vocabMode, { caption: settings.vocabCaption });
@@ -551,8 +587,13 @@ document.addEventListener('visibilitychange', () => {
 });
 
 window.addEventListener('resize', () => {
-  if (showing('text')) renderWord(reader.index);
-  else if (showing('vocab')) renderVocabItem(vocab.current);
+  if (showing('text')) {
+    regroup();
+    view.invalidate();
+    renderWord(reader.index);
+  } else if (showing('vocab')) {
+    renderVocabItem(vocab.current);
+  }
 });
 
 // ---------------- início ----------------

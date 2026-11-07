@@ -278,6 +278,7 @@ label.setting-row { gap: 12px; min-height: 44px; cursor: pointer; }
 .pills { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .pills button { height: 44px; padding: 0; color: #c3c8cf; font-weight: 600; }
 .pills button[aria-pressed="true"] { border-color: var(--accent); background: #22161a; color: #fff; }
+.field { display: flex; flex-direction: column; gap: 6px; margin: 14px 0; }
 
 .between { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .meter { height: 6px; margin: 10px 0; border-radius: 3px; background: var(--line); overflow: hidden; }
@@ -331,6 +332,19 @@ label.setting-row { gap: 12px; min-height: 44px; cursor: pointer; }
   transform: translate(var(--word-x), -50%);
 }
 .w-pivot { color: var(--accent); }
+
+/* blocos de palavras (chunking): a palavra falada fica sublinhada */
+.w-chunk { display: none; }
+.vr.chunked .w-chunk { display: block; }
+.vr.chunked .w-left, .vr.chunked .w-pivot, .vr.chunked .w-right { display: none; }
+.w-chunk span { color: #cfcfcf; }
+.w-chunk span.active {
+  color: #ffffff;
+  text-decoration-line: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 0.07em;
+  text-underline-offset: 0.18em;
+}
 
 /* linhas-guia acima e abaixo, com marca no ponto de foco */
 .reticle {

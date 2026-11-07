@@ -45,6 +45,16 @@
         <h2>Leitura</h2>
         <label>Velocidade: <output id="wpmOut"></output> palavras/min
           <input type="range" id="wpm" min="80" max="600" step="10"></label>
+        <div class="field">
+          <span id="chunkLabel">Palavras por vez</span>
+          <div class="pills" role="group" aria-labelledby="chunkLabel">
+            <button type="button" data-chunk="1">1</button>
+            <button type="button" data-chunk="2">2</button>
+            <button type="button" data-chunk="3">3</button>
+            <button type="button" data-chunk="4">4</button>
+          </div>
+          <span id="chunkHint" class="muted small"></span>
+        </div>
         <label class="check"><input type="checkbox" id="context"> Mostrar a frase inteira abaixo da palavra</label>
       </section>
     </div>

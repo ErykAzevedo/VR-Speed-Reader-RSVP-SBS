@@ -32,6 +32,10 @@ Por HTTP na rede local, a leitura e a voz funcionam, mas o navegador bloqueia du
 1. Cole um texto em inglês ou abra um `.txt`. A posição de leitura fica salva por texto.
 2. Escolha a velocidade (comece com 160–220 wpm) e a voz. **Testar voz** diz se a voz informa cada
    palavra (sincronia exata) ou se a sincronia será estimada.
+   - **Palavras por vez**: com 1, aparece uma palavra com a letra de foco em vermelho. Com 2 a 4,
+     aparecem blocos de sentido ("in the same spot," · "while your mind"): quebram na pontuação, não
+     terminam em "the", "of", "your"… e a palavra que a voz está falando fica sublinhada. O tamanho
+     dos blocos também respeita a largura da lente; com fonte menor cabem blocos maiores.
 3. **Entrar no VR** → tela cheia, paisagem. Durante a contagem, coloque o celular no VR Box.
 4. Se a palavra aparecer dupla, mexa no **ajuste horizontal** (valores positivos aproximam as
    imagens do centro). Ajuste também a altura e o tamanho da fonte.
@@ -93,7 +97,7 @@ texto ──► text.js ──► palavras + frases (chunks de até ~28 palavras
 
 | Arquivo | Papel |
 | --- | --- |
-| `js/text.js` | divide palavras e frases, letra de foco (ORP), peso de cada palavra |
+| `js/text.js` | divide palavras e frases, blocos de sentido (chunking), letra de foco (ORP), peso de cada palavra |
 | `js/reader.js` | reprodução: TTS sincronizado, modo estimado, modo silencioso, navegação |
 | `js/sbs.js` | desenho lado a lado, centralização do foco, redução de palavras longas, imagem e voltas |
 | `js/input.js` | teclado, botões de mídia, gamepad, toque e gestos de cabeça |

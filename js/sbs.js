@@ -9,7 +9,7 @@ const EYE_TEMPLATE = `
   <div class="stage">
     <div class="status"></div>
     <div class="reticle top"></div>
-    <div class="word"><span class="w-left"></span><span class="w-pivot"></span><span class="w-right"></span></div>
+    <div class="word"><span class="w-left"></span><span class="w-pivot"></span><span class="w-right"></span><span class="w-chunk"></span></div>
     <div class="reticle bottom"></div>
     <div class="picture"><img alt=""></div>
     <div class="caption"></div>
@@ -30,6 +30,7 @@ export class SbsView {
       left: eye.querySelector('.w-left'),
       pivot: eye.querySelector('.w-pivot'),
       right: eye.querySelector('.w-right'),
+      chunk: eye.querySelector('.w-chunk'),
       context: eye.querySelector('.context'),
       status: eye.querySelector('.status'),
       flash: eye.querySelector('.flash'),
@@ -41,6 +42,12 @@ export class SbsView {
     this.fit = 1;
     this.flashTimer = null;
     this.roundCount = 0;
+    this.chunkKey = null;
+  }
+
+  /** Força redesenhar o bloco atual (mudou a fonte ou o tamanho da tela). */
+  invalidate() {
+    this.chunkKey = null;
   }
 
   /** 'text' = leitor de texto · 'word' / 'image' = modos do vocabulário */
@@ -88,9 +95,12 @@ export class SbsView {
     s.setProperty('--shift-y', `${shiftY}px`);
     this.root.classList.toggle('mono', mono);
     this.root.classList.toggle('show-context', showContext);
+    this.invalidate();
   }
 
   showWord(text) {
+    this.root.classList.remove('chunked');
+    this.chunkKey = null;
     const p = pivotIndex(text);
     const a = text.slice(0, p);
     const b = text.charAt(p);
@@ -103,14 +113,36 @@ export class SbsView {
     this._align();
   }
 
-  /** Centraliza a letra de foco e reduz a fonte se a palavra não couber na lente. */
-  _align() {
+  /**
+   * Bloco de palavras (chunking), centralizado na lente. A palavra que está sendo
+   * falada (`active`) fica sublinhada; o bloco só é redesenhado quando `key` muda.
+   */
+  showChunk(texts, active, key) {
+    if (key !== this.chunkKey) {
+      this.chunkKey = key;
+      this.root.classList.add('chunked');
+      for (const part of this.parts) {
+        part.chunk.replaceChildren(...texts.flatMap((text, k) => {
+          const span = document.createElement('span');
+          span.textContent = text;
+          return k ? [' ', span] : [span];
+        }));
+      }
+      this._align(true);
+    }
+    for (const part of this.parts) {
+      [...part.chunk.children].forEach((span, k) => span.classList.toggle('active', k === active));
+    }
+  }
+
+  /** Centraliza a letra de foco (ou o bloco) e reduz a fonte se não couber na lente. */
+  _align(centered = false) {
     const ref = this.parts.find((p) => p.eye.offsetWidth > 0) ?? this.parts[0];
     // medidas no tamanho atual, convertidas para o tamanho "cheio" (fit = 1)
     const natural = ref.word.offsetWidth / this.fit;
     if (!natural) return;
-    const center = (ref.left.offsetWidth + ref.pivot.offsetWidth / 2) / this.fit;
-    // a letra de foco fica no meio da lente: o lado mais comprido é que precisa caber
+    const center = centered ? natural / 2 : (ref.left.offsetWidth + ref.pivot.offsetWidth / 2) / this.fit;
+    // o ponto de foco fica no meio da lente: o lado mais comprido é que precisa caber
     const widestSide = Math.max(center, natural - center);
     this.fit = Math.min(1, (ref.eye.clientWidth * 0.45) / widestSide);
     const s = this.root.style;
