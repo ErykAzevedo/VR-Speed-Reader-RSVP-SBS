@@ -21,6 +21,11 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 const newId = () => `l${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const emptyList = (name = 'Minha lista') => ({ id: newId(), name, items: [] });
 
+// Listas prontas, publicadas junto com o site (images/*.csv). Cada uma entra uma vez em cada
+// aparelho; palavras novas no .csv entram na próxima vez que o painel abre. Se a pessoa apaga a
+// lista, ela não volta; se remove uma palavra ou troca um link, a mudança é mantida.
+const READY_LISTS = [{ id: 'pronta-chunks', name: 'Chunks', csv: 'images/chunks.csv' }];
+
 function formatDuration(seconds) {
   const s = Math.round(seconds);
   if (s < 60) return `${s} s`;
@@ -122,6 +127,7 @@ export function initVocabUI({ store, settings, saveSettings, images, speak, onSt
   $('vocabDeleteList').addEventListener('click', () => {
     const l = list();
     if (!confirm(`Apagar a lista "${l.name}" (${plural(l.items.length, 'palavra', 'palavras')})?`)) return;
+    if (data.ready?.[l.id]) data.ready[l.id].removed = true;
     data.lists = data.lists.filter((x) => x !== l);
     if (!data.lists.length) data.lists.push(emptyList());
     data.current = data.lists[0].id;
@@ -344,8 +350,54 @@ export function initVocabUI({ store, settings, saveSettings, images, speak, onSt
     }, 50);
   }
 
+  // ---------- listas prontas ----------
+
+  async function syncReadyLists() {
+    data.ready ??= {};
+    let changed = false;
+    for (const ready of READY_LISTS) {
+      const state = (data.ready[ready.id] ??= { seen: {} }); // seen: palavra → último link do .csv
+      if (state.removed) continue;
+      let items;
+      try {
+        const res = await fetch(ready.csv, { cache: 'no-cache' });
+        if (!res.ok) continue;
+        items = parseVocabLines(await res.text()).items;
+      } catch {
+        continue; // sem internet: tenta de novo na próxima vez
+      }
+      if (!items.length) continue;
+
+      let l = data.lists.find((x) => x.id === ready.id);
+      if (!l) {
+        l = { id: ready.id, name: ready.name, items: [] };
+        data.lists.push(l);
+        if (!list().items.length) data.current = l.id; // a lista aberta estava vazia: mostra a pronta
+        changed = true;
+      }
+      for (const item of items) {
+        const key = item.word.toLowerCase();
+        const existing = l.items.find((x) => x.word.toLowerCase() === key);
+        if (!existing && !Object.hasOwn(state.seen, key)) {
+          l.items.push(item);
+          changed = true;
+        } else if (existing && item.url !== existing.url && existing.url === state.seen[key]) {
+          existing.url = item.url; // o .csv trocou o link e a pessoa não tinha mexido nele
+          changed = true;
+        }
+        state.seen[key] = item.url;
+      }
+    }
+    store.set('vocab', data);
+    if (changed) {
+      save();
+      render();
+    }
+  }
+
   updateAddButton();
   render();
+  syncReadyLists();
 
   return {
     refresh,
