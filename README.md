@@ -114,7 +114,11 @@ endereço do app, então o cache offline sempre funciona (mesma origem, sem CORS
 Trocar a imagem de uma palavra é só rodar de novo com o mesmo nome. Dá para editar o texto no
 `.csv` (ex.: `how-are-you-doing` → `How are you doing?`): rodar de novo mantém a edição.
 
-Listas prontas: `images/chunks.csv` (18 frases do dia a dia com imagens em neon). O script usa o `sips` do macOS,
+**Listas prontas:** o painel já vem com a lista **Chunks** (`images/chunks.csv`: 18 frases do dia a
+dia com imagens em neon). Ela entra uma vez em cada aparelho, e frases novas no `.csv` aparecem na
+próxima vez que o painel abre. Remover uma frase, trocar um link ou apagar a lista é respeitado.
+Para criar outra lista pronta, gere o `.csv` com `--lista` e inclua em `READY_LISTS`
+([js/vocab-ui.js](js/vocab-ui.js)). O script usa o `sips` do macOS,
 sem instalar nada.
 
 ### Controles dentro do VR
