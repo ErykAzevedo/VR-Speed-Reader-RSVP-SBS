@@ -165,6 +165,8 @@ def prompt_hash(scene: str) -> str:
 
 
 def new_id(type_: str, text: str, sense: str, taken: set[str]) -> str:
+    # "What's" → "whats", como nas imagens atuais (whats-going-on, im-not-sure)
+    text = re.sub(r"['’]", '', text)
     words = AI.slug(text).split('-')[:5]
     if sense:
         words += AI.slug(sense).split('-')[:1]

@@ -158,7 +158,7 @@ python3 scripts/generate-images.py gerar
   atuais; trocar de modelo muda o traço) e `gemini-flash-latest` para a cena. Dá para trocar com
   `GEMINI_IMAGE_MODEL` / `GEMINI_TEXT_MODEL`. Cada imagem custa cerca de US$ 0,04.
 
-**Listas prontas:** o painel já vem com a lista **Chunks** (`images/chunks.csv`: 18 frases do dia a
+**Listas prontas:** o painel já vem com a lista **Chunks** (`images/chunks.csv`: 36 frases do dia a
 dia com imagens em neon). Ela entra uma vez em cada aparelho, e frases novas no `.csv` aparecem na
 próxima vez que o painel abre. Remover uma frase, trocar um link ou apagar a lista é respeitado.
 Para criar outra lista pronta, gere o `.csv` com `--lista` e inclua em `READY_LISTS`
