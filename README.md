@@ -104,13 +104,17 @@ endereço do app, então o cache offline sempre funciona (mesma origem, sem CORS
    python3 scripts/add-images.py
    ```
 
-   Cada imagem é reduzida para no máximo 1024 px, convertida para JPEG (PNG continua PNG, GIF/WebP
-   vão como estão), **perde os metadados** (EXIF com GPS, câmera, data: o repositório é público) e
-   é salva em `images/` com nome sem acento. A lista `images/vocabulario.csv` é atualizada.
+   Cada imagem é reduzida para no máximo 1024 px, convertida para JPEG (só PNG com transparência
+   continua PNG; GIF/WebP vão como estão), **perde os metadados** (EXIF com GPS, câmera, data: o
+   repositório é público) e é salva em `images/` com nome sem acento. A lista
+   `images/vocabulario.csv` é atualizada (com `--lista chunks`, vira `images/chunks.csv`).
 3. Faça commit e push de `images/`. Em alguns minutos os links funcionam; cole o conteúdo de
    `images/vocabulario.csv` (ou abra o arquivo) na aba **Vocabulário**.
 
-Trocar a imagem de uma palavra é só rodar de novo com o mesmo nome. O script usa o `sips` do macOS,
+Trocar a imagem de uma palavra é só rodar de novo com o mesmo nome. Dá para editar o texto no
+`.csv` (ex.: `how-are-you-doing` → `How are you doing?`): rodar de novo mantém a edição.
+
+Listas prontas: `images/chunks.csv` (18 frases do dia a dia com imagens em neon). O script usa o `sips` do macOS,
 sem instalar nada.
 
 ### Controles dentro do VR

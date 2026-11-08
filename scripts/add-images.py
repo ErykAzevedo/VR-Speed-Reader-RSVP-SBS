@@ -8,10 +8,13 @@ Uso:
 O nome do arquivo vira a palavra: "guarda-chuva.jpg" → "guarda-chuva", "ice_cream.png" → "ice cream".
 Para cada imagem:
   - reduz para no máximo MAX_SIDE px no lado maior (fica leve no celular);
-  - converte JPG/HEIC/TIFF/BMP para JPEG; PNG continua PNG (mantém a transparência);
+  - converte JPG/HEIC/TIFF/BMP para JPEG; PNG também, a não ser que tenha transparência;
   - remove metadados (EXIF com GPS, data, câmera…), porque o repositório é público;
   - salva como images/<nome-sem-acento>.<ext>;
   - atualiza images/vocabulario.csv ("palavra, link"), pronto para colar na aba Vocabulário.
+    Se a imagem já está na lista, o texto da palavra fica como está: dá para editar o .csv
+    (ex.: "how-are-you-doing" → "How are you doing?") e rodar de novo sem perder a edição.
+    Com --lista chunks, a lista vira images/chunks.csv.
 
 Só usa o que já vem no macOS (sips) e a biblioteca padrão do Python.
 """
@@ -59,6 +62,11 @@ def pixel_size(path: Path) -> tuple[int, int]:
     w = int(re.search(r'pixelWidth:\s*(\d+)', out).group(1))
     h = int(re.search(r'pixelHeight:\s*(\d+)', out).group(1))
     return w, h
+
+
+def has_alpha(path: Path) -> bool:
+    out = subprocess.run(['sips', '-g', 'hasAlpha', str(path)], capture_output=True, text=True).stdout
+    return 'hasAlpha: yes' in out
 
 
 def convert(src: Path, dst: Path, fmt: str) -> None:
@@ -112,7 +120,10 @@ def process(src: Path, dest_dir: Path) -> tuple[str, str] | None:
         print(f'  ✗ {src.name}: nome sem letras ou números, pulei')
         return None
 
-    out_ext = '.jpg' if ext in TO_JPEG else '.png' if ext in TO_PNG else ext
+    if ext in TO_PNG:
+        out_ext = '.png' if has_alpha(src) else '.jpg'  # JPEG fica bem menor
+    else:
+        out_ext = '.jpg' if ext in TO_JPEG else ext
     dst = dest_dir / f'{name}{out_ext}'
     # a mesma palavra com outra extensão (ex.: trocou foto.png por foto.jpg) sai
     for old in dest_dir.glob(f'{name}.*'):
@@ -153,6 +164,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('sources', nargs='*', type=Path, help=f'pastas ou arquivos (padrão: {INBOX.relative_to(ROOT)}/)')
     ap.add_argument('--dest', type=Path, default=IMAGES, help='pasta de saída (padrão: images/)')
+    ap.add_argument('--lista', default='vocabulario', help='nome do .csv da lista (padrão: vocabulario)')
     ap.add_argument('--base-url', default=BASE_URL, help='endereço público da pasta de saída')
     args = ap.parse_args()
 
@@ -177,7 +189,7 @@ def main() -> int:
 
     args.dest.mkdir(parents=True, exist_ok=True)
     base = args.base_url.rstrip('/') + '/'
-    csv = args.dest / 'vocabulario.csv'
+    csv = args.dest / f'{slug(args.lista) or "vocabulario"}.csv'
     rows = read_list(csv)
 
     print(f'Processando {len(files)} imagem(ns):')
@@ -192,10 +204,15 @@ def main() -> int:
             word, filename = r
             url = base + filename
             stem = filename.rsplit('.', 1)[0]
-            # mesma palavra (ou mesmo arquivo) substitui a linha antiga
-            rows = [(w, u) for w, u in rows
-                    if w.lower() != word.lower() and u.rsplit('/', 1)[-1].rsplit('.', 1)[0] != stem]
-            rows.append((word, url))
+            same_file = lambda u: u.rsplit('/', 1)[-1].rsplit('.', 1)[0] == stem
+            # imagem que já estava na lista: mantém o texto (pode ter sido editado) e a posição
+            at = next((i for i, (_, u) in enumerate(rows) if same_file(u)), None)
+            if at is not None:
+                word = rows[at][0]
+                rows[at] = (word, url)
+            else:
+                rows = [(w, u) for w, u in rows if w.lower() != word.lower()]
+                rows.append((word, url))
             added.append((word, url))
 
     write_list(csv, rows)
