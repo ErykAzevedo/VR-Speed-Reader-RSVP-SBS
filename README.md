@@ -91,6 +91,28 @@ aceita `;` ou tab, e linha só com a palavra) ou abra um `.csv`. Dá para ter v�
 offline nas próximas vezes. Se não permite, ela é carregada direto e fica na memória enquanto o app
 está aberto. Em ambos os casos ela já está carregada quando a palavra aparece.
 
+#### Hospedar suas imagens (pasta `images/`)
+
+As imagens podem ficar no próprio repositório: o GitHub Pages publica a pasta `images/` no mesmo
+endereço do app, então o cache offline sempre funciona (mesma origem, sem CORS).
+
+1. Coloque as imagens em `images/entrada/` com **o nome da palavra**: `cat.jpg`, `maçã.heic`,
+   `ice_cream.png` (o `_` vira espaço). Essa pasta não vai para o Git.
+2. Rode:
+
+   ```bash
+   python3 scripts/add-images.py
+   ```
+
+   Cada imagem é reduzida para no máximo 1024 px, convertida para JPEG (PNG continua PNG, GIF/WebP
+   vão como estão), **perde os metadados** (EXIF com GPS, câmera, data: o repositório é público) e
+   é salva em `images/` com nome sem acento. A lista `images/vocabulario.csv` é atualizada.
+3. Faça commit e push de `images/`. Em alguns minutos os links funcionam; cole o conteúdo de
+   `images/vocabulario.csv` (ou abra o arquivo) na aba **Vocabulário**.
+
+Trocar a imagem de uma palavra é só rodar de novo com o mesmo nome. O script usa o `sips` do macOS,
+sem instalar nada.
+
 ### Controles dentro do VR
 
 | Ação | Como |
