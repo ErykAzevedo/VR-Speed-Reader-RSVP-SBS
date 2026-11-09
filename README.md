@@ -114,7 +114,51 @@ endereço do app, então o cache offline sempre funciona (mesma origem, sem CORS
 Trocar a imagem de uma palavra é só rodar de novo com o mesmo nome. Dá para editar o texto no
 `.csv` (ex.: `how-are-you-doing` → `How are you doing?`): rodar de novo mantém a edição.
 
-**Listas prontas:** o painel já vem com a lista **Chunks** (`images/chunks.csv`: 18 frases do dia a
+#### Gerar imagens com o Gemini (chunks, palavras e frases)
+
+Todas as imagens seguem um padrão só, para não virar ruído na memorização: arte neon em linhas sobre
+fundo preto, quem fala em ciano, a outra pessoa em magenta, objetos em amarelo ou verde, sem texto.
+O estilo é fixo no script, cada item só descreve a **cena**, e duas imagens da lista vão junto como
+referência de traço.
+
+A fonte da verdade é `images/items.json`. Cada item tem um `id` criado uma vez e congelado (`c-`,
+`w-` ou `s-` + slug): dá para corrigir o texto sem perder a imagem. Também tem `type`, `text`,
+`sense` (o sentido, nas palavras), `meaning_pt`, `scene`, `tags`, `uses` e `prompt_hash` (o hash do
+prompt que gerou a imagem).
+
+```bash
+python3 scripts/generate-images.py adicionar "Nice to meet you." --tags function:greeting,level:a1
+python3 scripts/generate-images.py gerar
+```
+
+1. **adicionar** cria o item e pede ao Gemini a cena e a tradução, com uma instrução para cada tipo:
+   - **chunk**: o *sentido*, por uma situação ou metáfora, nunca as palavras ao pé da letra (com
+     proibição explícita quando a leitura literal engana, como "No cosmetics or makeup");
+   - **word** (`--tipo word bank --sentido "financial institution"`): o objeto ou a ação isolados,
+     só naquele sentido;
+   - **sentence** (`--tipo sentence`, `--usa c-take-your-time`): a cena literal (quem, o quê, onde),
+     com os detalhes que a diferenciam de frases parecidas.
+
+   Nenhuma imagem é gerada ainda: revise a cena em `images/items.json` (ou use `--gerar` para pular
+   a revisão).
+2. **gerar** gera só o que falta: item sem imagem ou cuja cena mudou desde a última imagem
+   (`prompt_hash` diferente). `--dry-run` mostra o que geraria, sem custo. `gerar <id> --forcar`
+   faz outra imagem com a mesma cena, e `cena <id> --nova` pede outra cena ao Gemini.
+3. A imagem passa pelo `add-images.py` (1024 px, JPEG, sem metadados) e entra na lista do app:
+
+   | Tipo | Imagens | Lista |
+   | --- | --- | --- |
+   | chunk | `images/<slug>.jpg` | `images/chunks.csv` |
+   | word | `images/words/<slug>.jpg` | `images/palavras.csv` |
+   | sentence | `images/sentences/<slug>.jpg` | `images/frases.csv` |
+
+- **Tags** usam família: `topic:` e `source:` são livres; `level:` (a1–c2) e `function:` têm
+  lista fechada (`TAG_CLOSED` no script), para não existirem dois nomes para a mesma coisa.
+- Precisa de `GEMINI_API_KEY` com billing ativo. Modelos: `gemini-2.5-flash-image` (o das imagens
+  atuais; trocar de modelo muda o traço) e `gemini-flash-latest` para a cena. Dá para trocar com
+  `GEMINI_IMAGE_MODEL` / `GEMINI_TEXT_MODEL`. Cada imagem custa cerca de US$ 0,04.
+
+**Listas prontas:** o painel já vem com a lista **Chunks** (`images/chunks.csv`: 36 frases do dia a
 dia com imagens em neon). Ela entra uma vez em cada aparelho, e frases novas no `.csv` aparecem na
 próxima vez que o painel abre. Remover uma frase, trocar um link ou apagar a lista é respeitado.
 Para criar outra lista pronta, gere o `.csv` com `--lista` e inclua em `READY_LISTS`
